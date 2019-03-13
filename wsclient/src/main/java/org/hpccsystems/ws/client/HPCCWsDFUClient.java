@@ -1222,6 +1222,7 @@ public class HPCCWsDFUClient extends DataSingleton
             filecreatereq.setCluster(cluster);
             filecreatereq.setExpirySeconds(expirySeconds);
             filecreatereq.setName(fileName);
+            filecreatereq.setRequestId(fileName);
             filecreatereq.setReturnTextResponse(true);
 
             try
