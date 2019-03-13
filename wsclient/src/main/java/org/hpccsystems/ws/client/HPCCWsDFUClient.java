@@ -1097,6 +1097,22 @@ public class HPCCWsDFUClient extends DataSingleton
             throw new Exception("WSDFU getFileAccess not available on HPCC v" + targetVersion.major + "." + targetVersion.minor);
     }
 
+    /**
+     * Create a new (unpublished) dfu file. Does not request all file metadata.
+     * DAFILESERV fileaccess token is requested
+     * @param fileName
+     * @param cluster
+     * @param eclRecordDefinition
+     * @param partitionHostMap Array declaring the Filepart[i]->Node mapping
+     * @param expirySeconds
+     * @return
+     * @throws Exception
+     */
+    public DFUCreateFileWrapper createFile(String fileName, String cluster, String eclRecordDefinition, int expirySeconds) throws Exception
+    {
+        return createFileAndAcquireAccess(fileName, cluster, eclRecordDefinition, new String[0], expirySeconds, false, false,
+                org.hpccsystems.ws.client.gen.wsdfu.v1_39.FileAccessRole.External, org.hpccsystems.ws.client.gen.wsdfu.v1_39.SecAccessType.Write);
+    }
 
     /**
      * Create a new (unpublished) dfu file. Does not request all file metadata.

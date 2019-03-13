@@ -68,6 +68,11 @@ public class DFUCreateFileWrapper
         return wrappedDFUFileAccessInfo.getFileAccessInfoBlob();
     }
 
+    public DFUFileAccessInfoWrapper getFileAccessInfo()
+    {
+        return wrappedDFUFileAccessInfo;
+    }
+
     /**
      * Gets the ExpiryTime value for this DFUFileAccessInfo.
      *
