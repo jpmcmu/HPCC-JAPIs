@@ -13,8 +13,8 @@ import org.hpccsystems.ws.client.extended.HPCCWsAttributesClient;
 import org.hpccsystems.ws.client.extended.HPCCWsSQLClient;
 import org.hpccsystems.ws.client.gen.extended.wssql.v3_05.ExecuteSQLResponse;
 import org.hpccsystems.ws.client.gen.filespray.v1_16.PhysicalFileStruct;
-import org.hpccsystems.ws.client.gen.wsdfu.v1_39.DFUDataColumn;
 import org.hpccsystems.ws.client.gen.wsdfu.v1_39.SecAccessType;
+import org.hpccsystems.ws.client.gen.wsdfu.v1_50.DFUDataColumn;
 
 import org.hpccsystems.ws.client.platform.DFUFileDetailInfo;
 import org.hpccsystems.ws.client.platform.DFUFilePartInfo;
@@ -337,7 +337,16 @@ public class PlatformTester
             connector.setVerbosemode(true);
             System.out.println("wsdfu ver: " + connector.getwsDFUClientClientVer());
             HPCCWsDFUClient wsDFUClient = connector.getWsDFUClient();
-            DFUFileAccessInfoWrapper a =wsDFUClient.getFileAccess(SecAccessType.Read, "benchmark::integer::2mb", "thor_160", 120, "random", true, true, true);
+            if (v.major == 7 && v.minor == 0)
+            {
+                System.out.println("Attempting file access on HPCC 7.0.x cluster...");
+                DFUFileAccessInfoWrapper a = wsDFUClient.getFileAccess(SecAccessType.Read, "benchmark::integer::2mb", "thor_160", 120, "random", true, true, true);
+            }
+            else if (v.major == 7 && v.minor > 0)
+            {
+                System.out.println("Attempting file access on HPCC 7.0.x cluster...");
+                wsDFUClient.getFileAccess("benchmark::integer::2mb", "thor_160", 120, "random");
+            }
             platform.checkInHPCCWsClient(connector);
 
             connector = platform.checkOutHPCCWsClient();
