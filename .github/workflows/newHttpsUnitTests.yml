@@ -34,7 +34,7 @@ jobs:
 
     - name: Install HPCC Cluster
       run: |
-        helm install myhpcc hpcc/
+        helm install myhpcc hpcc/ --set global.image.version=latest
 
     - uses: actions/checkout@v3
       with:
