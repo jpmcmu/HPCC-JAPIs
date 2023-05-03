@@ -25,15 +25,16 @@ jobs:
 
     steps:
 
-    - name: Install K8s
-      uses: balchua/microk8s-actions@v0.3.2
-      with:
-        channel: '1.26-strict/stable'
-        devMode: 'true'
-        addons: '["rbac", "dns", "hostpath-storage", "registry", "metrics-server"]'
+    # - name: Install K8s
+    #   uses: balchua/microk8s-actions@v0.3.2
+    #   with:
+    #     channel: '1.26-strict/stable'
+    #     devMode: 'true'
+    #     addons: '["rbac", "dns", "hostpath-storage", "registry", "metrics-server"]'
 
     - name: Install HPCC Cluster
       run: |
+        helm repo add hpcc https://hpcc-systems.github.io/helm-chart
         helm install myhpcc hpcc/ --set global.image.version=latest
 
     - uses: actions/checkout@v3
