@@ -36,7 +36,7 @@ jobs:
       run: |
         helm repo add hpcc https://hpcc-systems.github.io/helm-chart
         helm repo update
-        helm install myhpcc hpcc/ --set global.image.version=latest
+        helm install myhpcc hpcc/hpcc --set global.image.version=latest
 
     - uses: actions/checkout@v3
       with:
