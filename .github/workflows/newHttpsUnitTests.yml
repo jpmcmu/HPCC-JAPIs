@@ -60,6 +60,7 @@ jobs:
 
     - name: Fetch hpccsystems-platform docker container name
       run: |
+          kubectl get svc
           kubectl wait --for=condition=ready pod --timeout=60s -l app=eclwatch
           echo "PLATFORM_CONTAINER_NAME=$(kubectl get pods --selector=server=eclwatch  --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}')" >> $GITHUB_ENV
 
