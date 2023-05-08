@@ -57,6 +57,10 @@ jobs:
           kubectl wait --for=condition=ready pod --timeout=180s -l app=eclwatch
           echo "PLATFORM_CONTAINER_NAME=$(kubectl get pods --selector=server=eclwatch  --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}')" >> $GITHUB_ENV
 
+    - name: Check ECLWatch
+      run: |
+        curl 127.0.0.1:8010
+
     # - name: HPCCSystems Datafile Setup
     #   run: |
     #     wget -q https://raw.githubusercontent.com/hpcc-systems/hpcc4j/master/wsclient/src/test/resources/generatedata.sh
