@@ -28,9 +28,9 @@ jobs:
     - name: Install K8s
       uses: balchua/microk8s-actions@v0.3.2
       with:
-        channel: '1.26-strict/stable'
+        channel: '1.26/stable'
         devMode: 'true'
-        addons: '["rbac", "dns", "hostpath-storage", "registry", "metrics-server"]'
+        addons: '["dns", "rbac", "hostpath-storage", "registry"]'
 
     - name: Install HPCC Cluster
       run: |
@@ -60,7 +60,8 @@ jobs:
 
     - name: Fetch hpccsystems-platform docker container name
       run: |
-          sudo microk8s inspect
+          sudo microk8s status
+          kubectl get pods
 
     # - name: HPCCSystems Datafile Setup
     #   run: |
