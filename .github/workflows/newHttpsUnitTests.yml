@@ -60,7 +60,7 @@ jobs:
 
     - name: Fetch hpccsystems-platform docker container name
       run: |
-          kubectl get pods
+          microk8s inspect
 
     # - name: HPCCSystems Datafile Setup
     #   run: |
