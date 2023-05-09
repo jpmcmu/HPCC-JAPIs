@@ -30,7 +30,7 @@ jobs:
       with:
         channel: '1.26/stable'
         devMode: 'true'
-        addons: '["dns", "rbac", "hostpath-storage", "registry"]'
+        addons: '["host-access", "dns", "rbac", "hostpath-storage", "registry"]'
 
     - name: Install HPCC Cluster
       run: |
@@ -59,7 +59,7 @@ jobs:
 
     - name: Check ECLWatch
       run: |
-        curl 127.0.0.1:8010
+        curl 10.0.1.1:8010
 
     # - name: HPCCSystems Datafile Setup
     #   run: |
