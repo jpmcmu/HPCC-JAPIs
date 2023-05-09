@@ -30,7 +30,7 @@ jobs:
       with:
         channel: '1.26/stable'
         devMode: 'true'
-        addons: '["host-access", "dns", "rbac", "hostpath-storage", "registry"]'
+        addons: '["metallb", "host-access", "dns", "rbac", "hostpath-storage", "registry"]'
 
     - name: Enable LoadBalancers
       run: |
