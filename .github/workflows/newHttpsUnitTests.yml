@@ -60,12 +60,11 @@ jobs:
       run: |
           kubectl wait --for=condition=ready pod --timeout=180s -l app=eclwatch
           echo "PLATFORM_CONTAINER_NAME=$(kubectl get pods --selector=server=eclwatch  --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}')" >> $GITHUB_ENV
+          echo "ECLWATCH_IP=$(kubectl get pods --selector=server=eclwatch  --template '{{.spec.clusterIP}}')" >> $GITHUB_ENV
 
     - name: Check ECLWatch
       run: |
-        kubectl get svc
-        kubectl get pods
-        kubectl exec --stdin --tty ${{env.PLATFORM_CONTAINER_NAME}} -- ps aux
+        curl $ECLWATCH_IP:8010/esp/files/index.html#/activities
 
     # - name: HPCCSystems Datafile Setup
     #   run: |
