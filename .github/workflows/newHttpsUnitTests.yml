@@ -60,7 +60,6 @@ jobs:
       run: |
           kubectl wait --for=condition=ready pod --timeout=180s -l app=eclwatch
           kubectl get pods
-          echo "PLATFORM_CONTAINER_NAME=$(kubectl get pods --selector=server=eclwatch  --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}')" >> $GITHUB_ENV
           echo "ECLWATCH_IP=$(kubectl get pods --selector=server=eclwatch  --template '{{.spec.clusterIP}}')" >> $GITHUB_ENV
 
     - name: Check ECLWatch
