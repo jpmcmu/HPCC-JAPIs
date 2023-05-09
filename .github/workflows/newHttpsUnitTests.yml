@@ -30,11 +30,11 @@ jobs:
       with:
         channel: '1.26/stable'
         devMode: 'true'
-        addons: '["metallb", "host-access", "dns", "rbac", "hostpath-storage", "registry"]'
+        addons: '["dns", "rbac", "hostpath-storage", "registry"]'
 
     - name: Enable LoadBalancers
       run: |
-        sudo microk8s enable metallb
+        sudo microk8s enable metallb:10.64.140.43-10.64.140.49
 
     - name: Install HPCC Cluster
       run: |
