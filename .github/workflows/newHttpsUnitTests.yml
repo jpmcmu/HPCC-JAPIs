@@ -64,7 +64,7 @@ jobs:
 
     - name: Check ECLWatch
       run: |
-        curl $ECLWATCH_IP:8010/esp/files/index.html#/activities
+        curl ${ECLWATCH_IP}:8010/esp/files/index.html#/activities
 
     # - name: HPCCSystems Datafile Setup
     #   run: |
