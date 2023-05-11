@@ -17,6 +17,11 @@ jobs:
 
     steps:
 
+    - name: Setup JDK 1.8
+      uses: actions/setup-java@v1
+      with:
+        java-version: 1.8
+
     - name: Install K8s
       uses: balchua/microk8s-actions@v0.3.2
       with:
@@ -28,32 +33,12 @@ jobs:
       run: |
         sudo microk8s enable metallb:10.64.140.43-10.64.140.49
 
-    - name: Install HPCC Cluster
+    - name: Install JetStack Cert Manager
       run: |
-        helm repo add hpcc https://hpcc-systems.github.io/helm-chart
+        helm repo add jetstack https://charts.jetstack.io
         helm repo update
-        helm install myhpcc hpcc/hpcc --set global.image.version=latest
-
-    - uses: actions/checkout@v3
-      with:
-        ref: ${{ github.event.pull_request.head.sha }}
-        fetch-depth: 0
-    - name: Rebase
-      run: |
-        git config user.email 'hpccsystems@lexisnexisrisk.com'
-        git config user.name 'hpccsystems development'
-
-    - name: Setup JDK 1.8
-      uses: actions/setup-java@v1
-      with:
-        java-version: 1.8
-
-    - name: Wait for ECLWatch Startup
-      run: |
-          kubectl wait --for=condition=ready pod --timeout=180s -l app=eclwatch
-          kubectl get pods
-          echo "PLATFORM_CONTAINER_NAME=$(kubectl get pods --selector=server=eclwatch  --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}')" >> $GITHUB_ENV
-          echo "ECLWATCH_IP=$(kubectl get svc eclwatch -o jsonpath='{.spec.clusterIP}')" >> $GITHUB_ENV
+        kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.11.0/cert-manager.crds.yaml
+        helm install cert-manager jetstack/cert-manager --namespace cert-manager --create-namespace --version v1.11.0
 
     - name: Create Root Certificate Authority
       run: |
@@ -65,18 +50,42 @@ jobs:
         x509_extensions        = x509_ca
 
         [dn]
-        C                      = YOUR_COUNTRY
-        ST                     = YOUR_STATE
-        L                      = YOUR_CITY
-        O                      = YOUR_ORGANIZATION
-        OU                     = YOUR_ORGANIZATION_UNIT
-        CN                     = Internal Cluster CA
-        emailAddress           = YOUR_SUPPORT_EMAIL
+        C                      = US
+        ST                     = GA
+        L                      = Alparetta
+        O                      = Lexis Nexis Risk
+        OU                     = Platform Development
+        CN                     = TestCluster
+        emailAddress           = support@lexisnexisrisk.com
 
         [x509_ca]
         basicConstraints=CA:true,pathlen:1" > ca-req.cfg
         openssl req -x509 -newkey rsa:2048 -nodes -keyout ca.key -sha256 -days 1825 -out ca.crt -config ca-req.cfg
         kubectl create secret tls hpcc-local-issuer-key-pair --cert=ca.crt --key=ca.key
+
+    - name: Install HPCC Cluster
+      run: |
+        echo "certificates:\n  enabled: true\ndafilesrv:\n  - name: rowservice\n    disabled: false\n    application: stream\n    service:\n      servicePort: 7600\n      visibility: global" > values.yaml
+        helm repo add hpcc https://hpcc-systems.github.io/helm-chart
+        helm repo update
+        helm install myhpcc hpcc/hpcc --set global.image.version=latest -f values.yaml
+
+    - uses: actions/checkout@v3
+      with:
+        ref: ${{ github.event.pull_request.head.sha }}
+        fetch-depth: 0
+
+    - name: Rebase
+      run: |
+        git config user.email 'hpccsystems@lexisnexisrisk.com'
+        git config user.name 'hpccsystems development'
+
+    - name: Wait for ECLWatch Startup
+      run: |
+          kubectl wait --for=condition=ready pod --timeout=180s -l app=eclwatch
+          kubectl get pods
+          echo "PLATFORM_CONTAINER_NAME=$(kubectl get pods --selector=server=eclwatch  --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}')" >> $GITHUB_ENV
+          echo "ECLWATCH_IP=$(kubectl get svc eclwatch -o jsonpath='{.spec.clusterIP}')" >> $GITHUB_ENV
 
     # - name: HPCCSystems Datafile Setup
     #   run: |
