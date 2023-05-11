@@ -61,7 +61,7 @@ jobs:
         [x509_ca]
         basicConstraints=CA:true,pathlen:1" > ca-req.cfg
         openssl req -x509 -newkey rsa:2048 -nodes -keyout ca.key -sha256 -days 1825 -out ca.crt -config ca-req.cfg
-        kubectl create secret tls hpcc-local-issuer-key-pair --cert=ca.crt --key=ca.key
+        kubectl create secret tls hpcc-signing-issuer-key-pair --cert=ca.crt --key=ca.key
 
     - name: Install HPCC Cluster
       run: |
