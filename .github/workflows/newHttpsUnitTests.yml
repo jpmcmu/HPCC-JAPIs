@@ -65,10 +65,12 @@ jobs:
 
     - name: Install HPCC Cluster
       run: |
-        echo "certificates:\n  enabled: true\ndafilesrv:\n  - name: rowservice\n    disabled: false\n    application: stream\n    service:\n      servicePort: 7600\n      visibility: global" > values.yaml
+        echo "certificates:\n  enabled: true\ndafilesrv:\n  - name: rowservice\n    disabled: false\n    application: stream\n    service:\n      servicePort: 7600\n      visibility: global\n" > values.yaml
+        cat values.yaml
         helm repo add hpcc https://hpcc-systems.github.io/helm-chart
         helm repo update
         helm install myhpcc hpcc/hpcc --set global.image.version=latest -f values.yaml
+        kubectl get secrets
 
     - uses: actions/checkout@v3
       with:
