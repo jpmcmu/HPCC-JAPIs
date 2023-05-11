@@ -40,7 +40,7 @@ jobs:
         kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.11.0/cert-manager.crds.yaml
         helm install cert-manager jetstack/cert-manager --namespace cert-manager --create-namespace --version v1.11.0
 
-    - name: Create Root Certificate Authority
+    - name: Create Root Certificates
       run: |
         echo "[req]
         default_bits           = 2048
@@ -64,10 +64,6 @@ jobs:
         kubectl create secret tls hpcc-signing-issuer-key-pair --cert=ca.crt --key=ca.key
         kubectl create secret tls hpcc-local-issuer-key-pair --cert=ca.crt --key=ca.key
         sudo keytool -import -trustcacerts -cacerts -storepass changeit -noprompt -alias hpcc-local-issuer -file ca.crt
-
-    - name: Add DNS Entry
-      run: |
-        sudo -- sh -c -e "echo '127.0.0.1 eclwatch.default' >> /etc/hosts";
 
     - name: Install HPCC Cluster
       run: |
@@ -93,8 +89,10 @@ jobs:
           kubectl get pods
           echo "PLATFORM_CONTAINER_NAME=$(kubectl get pods --selector=server=eclwatch  --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}')" >> $GITHUB_ENV
           echo "ECLWATCH_IP=$(kubectl get svc eclwatch -o jsonpath='{.spec.clusterIP}')" >> $GITHUB_ENV
-          kubectl get svc
-          curl https://eclwatch.default:8010/esp/files/index.html#/activities
+
+    - name: Add Entry to Hosts File
+      run: |
+        sudo -- sh -c -e "echo '${{ env.ECLWATCH_IP }} eclwatch.default' >> /etc/hosts";
 
     # - name: HPCCSystems Datafile Setup
     #   run: |
@@ -116,7 +114,7 @@ jobs:
     #     docker exec ${{ env.PLATFORM_CONTAINER_NAME }} /etc/init.d/hpcc-init stop
 
     # speed things up with caching from https://docs.github.com/en/actions/guides/building-and-testing-java-with-maven
-    - name: Cashe Maven packages
+    - name: Cache Maven packages
       uses: actions/cache@v2
       with:
         path: ~/.m2
