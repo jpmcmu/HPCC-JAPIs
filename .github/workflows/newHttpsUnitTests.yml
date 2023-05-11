@@ -93,6 +93,8 @@ jobs:
           kubectl get pods
           echo "PLATFORM_CONTAINER_NAME=$(kubectl get pods --selector=server=eclwatch  --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}')" >> $GITHUB_ENV
           echo "ECLWATCH_IP=$(kubectl get svc eclwatch -o jsonpath='{.spec.clusterIP}')" >> $GITHUB_ENV
+          kubectl get svc
+          curl https://eclwatch.default:8010/esp/files/index.html#/activities
 
     # - name: HPCCSystems Datafile Setup
     #   run: |
