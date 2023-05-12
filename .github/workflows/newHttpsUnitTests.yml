@@ -90,6 +90,10 @@ jobs:
           echo "PLATFORM_CONTAINER_NAME=$(kubectl get pods --selector=server=eclwatch  --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}')" >> $GITHUB_ENV
           echo "ECLWATCH_IP=$(kubectl get svc eclwatch -o jsonpath='{.spec.clusterIP}')" >> $GITHUB_ENV
 
+    - name: Add Entry to Hosts File
+      run: |
+        sudo -- sh -c -e "echo '${{ env.ECLWATCH_IP }} eclwatch.default' >> /etc/hosts";
+
     - name: Trust Certs
       run: |
         kubectl get secret eclwatch-public-eclwatch-tls -o 'go-template={{ index .data "tls.crt" }}' | base64 -d > eclwatch-public-eclwatch-tls.crt
@@ -100,10 +104,8 @@ jobs:
         sudo keytool -import -trustcacerts -cacerts -storepass changeit -noprompt -alias eclwatch-local-eclwatch-tls -file eclwatch-local-eclwatch-tls.crt
         sudo keytool -import -trustcacerts -cacerts -storepass changeit -noprompt -alias eclwatch-signing-global-tls -file eclwatch-signing-global-tls.crt
         sudo keytool -import -trustcacerts -cacerts -storepass changeit -noprompt -alias dafilesrv-public-rowservice-tls -file dafilesrv-public-rowservice-tls.crt
-
-    - name: Add Entry to Hosts File
-      run: |
-        sudo -- sh -c -e "echo '${{ env.ECLWATCH_IP }} eclwatch.default' >> /etc/hosts";
+        openssl s_client -showcerts -connect https://${{ env.ECLWATCH_IP }}:8010 < /dev/null | openssl x509 -outform DER > cert.der
+        sudo keytool -import -trustcacerts -cacerts -storepass changeit -noprompt -alias eclwatch-tls -file cert.der
 
     # - name: HPCCSystems Datafile Setup
     #   run: |
