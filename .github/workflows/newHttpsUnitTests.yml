@@ -90,6 +90,13 @@ jobs:
           echo "PLATFORM_CONTAINER_NAME=$(kubectl get pods --selector=server=eclwatch  --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}')" >> $GITHUB_ENV
           echo "ECLWATCH_IP=$(kubectl get svc eclwatch -o jsonpath='{.spec.clusterIP}')" >> $GITHUB_ENV
 
+    - name: Trust Certs
+      run: |
+        kubectl get secret eclwatch-public-eclwatch-tls -o 'go-template={{ index .data "tls.crt" }}' | base64 -d > eclwatch-public-eclwatch-tls.crt
+        kubectl get secret dafilesrv-public-rowservice-tls -o 'go-template={{ index .data "tls.crt" }}' | base64 -d > dafilesrv-public-rowservice-tls.crt
+        sudo keytool -import -trustcacerts -cacerts -storepass changeit -noprompt -alias eclwatch-public-eclwatch-tls -file eclwatch-public-eclwatch-tls.crt
+        sudo keytool -import -trustcacerts -cacerts -storepass changeit -noprompt -alias dafilesrv-public-rowservice-tls -file dafilesrv-public-rowservice-tls.crt
+
     - name: Add Entry to Hosts File
       run: |
         sudo -- sh -c -e "echo '${{ env.ECLWATCH_IP }} eclwatch.default' >> /etc/hosts";
