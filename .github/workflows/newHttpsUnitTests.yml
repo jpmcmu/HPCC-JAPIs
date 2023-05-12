@@ -93,12 +93,12 @@ jobs:
     - name: Trust Certs
       run: |
         kubectl get secret eclwatch-public-eclwatch-tls -o 'go-template={{ index .data "tls.crt" }}' | base64 -d > eclwatch-public-eclwatch-tls.crt
-        kubectl get secret eclwatch-signing-eclwatch-tls -o 'go-template={{ index .data "tls.crt" }}' | base64 -d > eclwatch-signing-eclwatch-tls.crt
+        kubectl get secret eclwatch-signing-global-tls -o 'go-template={{ index .data "tls.crt" }}' | base64 -d > eclwatch-signing-global-tls.crt
         kubectl get secret eclwatch-local-eclwatch-tls -o 'go-template={{ index .data "tls.crt" }}' | base64 -d > eclwatch-local-eclwatch-tls.crt
         kubectl get secret dafilesrv-public-rowservice-tls -o 'go-template={{ index .data "tls.crt" }}' | base64 -d > dafilesrv-public-rowservice-tls.crt
         sudo keytool -import -trustcacerts -cacerts -storepass changeit -noprompt -alias eclwatch-public-eclwatch-tls -file eclwatch-public-eclwatch-tls.crt
         sudo keytool -import -trustcacerts -cacerts -storepass changeit -noprompt -alias eclwatch-local-eclwatch-tls -file eclwatch-local-eclwatch-tls.crt
-        sudo keytool -import -trustcacerts -cacerts -storepass changeit -noprompt -alias eclwatch-signing-eclwatch-tls -file eclwatch-signing-eclwatch-tls.crt
+        sudo keytool -import -trustcacerts -cacerts -storepass changeit -noprompt -alias eclwatch-signing-global-tls -file eclwatch-signing-global-tls.crt
         sudo keytool -import -trustcacerts -cacerts -storepass changeit -noprompt -alias dafilesrv-public-rowservice-tls -file dafilesrv-public-rowservice-tls.crt
 
     - name: Add Entry to Hosts File
