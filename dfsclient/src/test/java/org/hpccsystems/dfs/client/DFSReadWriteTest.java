@@ -63,8 +63,7 @@ public class DFSReadWriteTest extends BaseRemoteTest
 {
     private static final String[] datasets       = { "~benchmark::integer::20kb", "~benchmark::all_types::200kb"};
     private static final int[]    expectedCounts = { 1250, 5600 };
-    private boolean generatedTestData = false;
-
+    private static boolean generatedTestData = false;
 
     @Before
     public void generateTestData() throws Exception
