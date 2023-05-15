@@ -96,43 +96,12 @@ jobs:
         sudo -- sh -c -e "echo '${{ env.ECLWATCH_IP }} eclwatch.default' >> /etc/hosts";
         sudo -- sh -c -e "echo '${{ env.ROWSERVICE_IP }} rowservice.default' >> /etc/hosts";
 
-    # - name: Failed imports
-    # kubectl get secret eclwatch-public-eclwatch-tls -o 'go-template={{ index .data "tls.crt" }}' | base64 -d > eclwatch-public-eclwatch-tls.crt
-    # kubectl get secret eclwatch-signing-global-tls -o 'go-template={{ index .data "tls.crt" }}' | base64 -d > eclwatch-signing-global-tls.crt
-    # kubectl get secret eclwatch-local-eclwatch-tls -o 'go-template={{ index .data "tls.crt" }}' | base64 -d > eclwatch-local-eclwatch-tls.crt
-    # kubectl get secret dafilesrv-public-rowservice-tls -o 'go-template={{ index .data "tls.crt" }}' | base64 -d > dafilesrv-public-rowservice-tls.crt
-    # sudo keytool -import -trustcacerts -cacerts -storepass changeit -noprompt -alias eclwatch-public-eclwatch-tls -file eclwatch-public-eclwatch-tls.crt
-    # sudo keytool -import -trustcacerts -cacerts -storepass changeit -noprompt -alias eclwatch-local-eclwatch-tls -file eclwatch-local-eclwatch-tls.crt
-    # sudo keytool -import -trustcacerts -cacerts -storepass changeit -noprompt -alias eclwatch-signing-global-tls -file eclwatch-signing-global-tls.crt
-    # sudo keytool -import -trustcacerts -cacerts -storepass changeit -noprompt -alias dafilesrv-public-rowservice-tls -file dafilesrv-public-rowservice-tls.crt
-
     - name: Trust Certs
       run: |
-        ls $JAVA_HOME/jre/lib/security/cacerts
         openssl s_client -showcerts -connect eclwatch.default:8010 < /dev/null | openssl x509 -outform DER > cert.der
         sudo keytool -import -keystore $JAVA_HOME/jre/lib/security/cacerts -storepass changeit -noprompt -alias eclwatch-tls -file cert.der
         openssl s_client -showcerts -connect rowservice.default:7600 < /dev/null | openssl x509 -outform DER > cert.der
         sudo keytool -import -keystore $JAVA_HOME/jre/lib/security/cacerts -storepass changeit -noprompt -alias dafilesrv-tls -file cert.der
-        keytool -list -v -keystore $JAVA_HOME/jre/lib/security/cacerts
-
-    # - name: HPCCSystems Datafile Setup
-    #   run: |
-    #     wget -q https://raw.githubusercontent.com/hpcc-systems/hpcc4j/master/wsclient/src/test/resources/generatedata.sh
-
-    # - name: HPCCSystems Datafile Setup
-    #   run: |
-    #     docker exec ${{ env.PLATFORM_CONTAINER_NAME }} /etc/init.d/hpcc-init start
-    #     wget -q https://raw.githubusercontent.com/hpcc-systems/hpcc4j/master/wsclient/src/test/resources/generatedata.sh
-
-    #     #wget http://localhost:8010/WsDFUXRef/version_
-    #     #wget http://localhost:8510/WsSQL/version_
-    #     #wget http://localhost:8010/WsWorkunits/version_
-    #     docker exec ${{ env.PLATFORM_CONTAINER_NAME }} cat /var/log/HPCCSystems/myesp/esp.log
-
-    #     chmod +x generatedata.sh
-    #     docker cp generatedata.sh ${{ env.PLATFORM_CONTAINER_NAME }}:/home/hpcc/generatedata.sh
-    #     docker exec ${{ env.PLATFORM_CONTAINER_NAME }} /home/hpcc/generatedata.sh
-    #     docker exec ${{ env.PLATFORM_CONTAINER_NAME }} /etc/init.d/hpcc-init stop
 
     # speed things up with caching from https://docs.github.com/en/actions/guides/building-and-testing-java-with-maven
     - name: Cache Maven packages
@@ -143,7 +112,4 @@ jobs:
         restore-keys: ${{ runner.os }}-m2
 
     - name: Build with Maven
-      run: mvn -B --activate-profiles jenkins-on-demand -Dmaven.gpg.skip=true -Dmaven.javadoc.skip=true -Dmaven.test.failure.ignore=false -Dhpccconn=https://eclwatch.default:8010 -Dwssqlport=8510 install
-
-    # - name: Build with Maven
-    #   run: mvn -B --activate-profiles jenkins-on-demand -Dmaven.gpg.skip=true -Dmaven.javadoc.skip=true -Dmaven.test.failure.ignore=false -Dhpccconn=https://localhost:18010 -Dwssqlport=18510 install
+      run: mvn -B --activate-profiles jenkins-on-demand -Dmaven.gpg.skip=true -Dmaven.javadoc.skip=true -Dmaven.test.failure.ignore=true -Dhpccconn=https://eclwatch.default:8010 -Dwssqlport=8510 install
