@@ -86,7 +86,7 @@ jobs:
       run: |
           kubectl wait --for=condition=ready pod --timeout=180s -l app=eclwatch
           echo "ECLWATCH_IP=$(kubectl get svc eclwatch -o jsonpath='{.spec.clusterIP}')" >> $GITHUB_ENV
-          kubectl wait --for=condition=ready pod --timeout=180s -l app=rowservice
+          timeout 180s bash -c 'until kubectl get svc/rowservice --output=jsonpath="{.status.loadBalancer}" | grep "ingress"; do : ; done'
           echo "ROWSERVICE_IP=$(kubectl get svc rowservice -o jsonpath='{.spec.clusterIP}')" >> $GITHUB_ENV
           kubectl get pods
           kubectl get svc
