@@ -71,7 +71,6 @@ jobs:
         helm repo add hpcc https://hpcc-systems.github.io/helm-chart
         helm repo update
         helm install myhpcc hpcc/hpcc --set global.image.version=latest -f values.yaml
-        kubectl get secrets
 
     - uses: actions/checkout@v3
       with:
@@ -87,6 +86,7 @@ jobs:
       run: |
           kubectl wait --for=condition=ready pod --timeout=180s -l app=eclwatch
           kubectl get pods
+          kubectl get svc
           echo "PLATFORM_CONTAINER_NAME=$(kubectl get pods --selector=server=eclwatch  --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}')" >> $GITHUB_ENV
           echo "ECLWATCH_IP=$(kubectl get svc eclwatch -o jsonpath='{.spec.clusterIP}')" >> $GITHUB_ENV
 
@@ -108,8 +108,8 @@ jobs:
       run: |
         openssl s_client -showcerts -connect eclwatch.default:8010 < /dev/null | openssl x509 -outform DER > cert.der
         sudo keytool -import -trustcacerts -cacerts -storepass changeit -noprompt -alias eclwatch-tls -file cert.der
-        openssl s_client -showcerts -connect eclwatch.default:7601 < /dev/null | openssl x509 -outform DER > cert.der
-        sudo keytool -import -trustcacerts -cacerts -storepass changeit -noprompt -alias dafilesrv-tls -file cert.der
+        # openssl s_client -showcerts -connect eclwatch.default:7601 < /dev/null | openssl x509 -outform DER > cert.der
+        # sudo keytool -import -trustcacerts -cacerts -storepass changeit -noprompt -alias dafilesrv-tls -file cert.der
 
     # - name: HPCCSystems Datafile Setup
     #   run: |
