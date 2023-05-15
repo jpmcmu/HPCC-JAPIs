@@ -85,14 +85,16 @@ jobs:
     - name: Wait for ECLWatch Startup
       run: |
           kubectl wait --for=condition=ready pod --timeout=180s -l app=eclwatch
+          echo "ECLWATCH_IP=$(kubectl get svc eclwatch -o jsonpath='{.spec.clusterIP}')" >> $GITHUB_ENV
+          kubectl wait --for=condition=ready pod --timeout=180s -l app=rowservice
+          echo "ROWSERVICE_IP=$(kubectl get svc rowservice -o jsonpath='{.spec.clusterIP}')" >> $GITHUB_ENV
           kubectl get pods
           kubectl get svc
-          echo "PLATFORM_CONTAINER_NAME=$(kubectl get pods --selector=server=eclwatch  --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}')" >> $GITHUB_ENV
-          echo "ECLWATCH_IP=$(kubectl get svc eclwatch -o jsonpath='{.spec.clusterIP}')" >> $GITHUB_ENV
 
-    - name: Add Entry to Hosts File
+    - name: Add Host File Entries
       run: |
         sudo -- sh -c -e "echo '${{ env.ECLWATCH_IP }} eclwatch.default' >> /etc/hosts";
+        sudo -- sh -c -e "echo '${{ env.ROWSERVICE_IP }} rowservice.default' >> /etc/hosts";
 
     # - name: Failed imports
     # kubectl get secret eclwatch-public-eclwatch-tls -o 'go-template={{ index .data "tls.crt" }}' | base64 -d > eclwatch-public-eclwatch-tls.crt
@@ -108,8 +110,8 @@ jobs:
       run: |
         openssl s_client -showcerts -connect eclwatch.default:8010 < /dev/null | openssl x509 -outform DER > cert.der
         sudo keytool -import -trustcacerts -cacerts -storepass changeit -noprompt -alias eclwatch-tls -file cert.der
-        # openssl s_client -showcerts -connect eclwatch.default:7601 < /dev/null | openssl x509 -outform DER > cert.der
-        # sudo keytool -import -trustcacerts -cacerts -storepass changeit -noprompt -alias dafilesrv-tls -file cert.der
+        openssl s_client -showcerts -connect rowservice.default:7600 < /dev/null | openssl x509 -outform DER > cert.der
+        sudo keytool -import -trustcacerts -cacerts -storepass changeit -noprompt -alias dafilesrv-tls -file cert.der
 
     # - name: HPCCSystems Datafile Setup
     #   run: |
