@@ -113,8 +113,7 @@ jobs:
         sudo keytool -import -trustcacerts -cacerts -storepass changeit -noprompt -alias eclwatch-tls -file cert.der
         openssl s_client -showcerts -connect rowservice.default:7600 < /dev/null | openssl x509 -outform DER > cert.der
         sudo keytool -import -trustcacerts -cacerts -storepass changeit -noprompt -alias dafilesrv-tls -file cert.der
-        keytool -list -keystore $JAVA_HOME/jre/lib/security/cacerts
-        java -version
+        keytool -list -v -keystore $JAVA_HOME/jre/lib/security/cacerts | grep eclwatch
 
     # - name: HPCCSystems Datafile Setup
     #   run: |
