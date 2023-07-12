@@ -1,7 +1,6 @@
 name: hpcc4j Pull Request Build Tests
 
 on:
-  push:
   pull_request:
 
 jobs:
