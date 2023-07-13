@@ -105,6 +105,8 @@ jobs:
       # sudo keytool -import -keystore $JAVA_HOME/jre/lib/security/cacerts -storepass changeit -noprompt -alias eclwatch-tls -file cert.der
       # sudo keytool -import -keystore $JAVA_HOME/cacerts -storepass changeit -noprompt -alias eclwatch-tls -file cert.der
       run: |
+        ls $JAVA_HOME
+        find $JAVA_HOME -name "cacerts"
         openssl s_client -showcerts -connect eclwatch.default:8010 < /dev/null | openssl x509 -outform DER > cert.der
         sudo keytool -import -cacerts -storepass changeit -noprompt -alias eclwatch-tls -file cert.der
         openssl s_client -showcerts -connect rowservice.default:7600 < /dev/null | openssl x509 -outform DER > cert.der
