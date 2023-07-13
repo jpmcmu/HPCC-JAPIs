@@ -123,5 +123,6 @@ jobs:
         key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
         restore-keys: ${{ runner.os }}-m2
 
+      # run: mvn -B --activate-profiles jenkins-on-demand -Djavax.net.ssl.keyStore=$JAVA_HOME/lib/security/cacerts -Dmaven.gpg.skip=true -Dmaven.javadoc.skip=true -Dmaven.test.failure.ignore=false -Dhpccconn=https://eclwatch.default:8010 -Dwssqlconn=https://sql2ecl.default:8510 install
     - name: Build with Maven
-      run: mvn -B --activate-profiles jenkins-on-demand -Djavax.net.ssl.keyStore=$JAVA_HOME/lib/security/cacerts -Dmaven.gpg.skip=true -Dmaven.javadoc.skip=true -Dmaven.test.failure.ignore=false -Dhpccconn=https://eclwatch.default:8010 -Dwssqlconn=https://sql2ecl.default:8510 install
+      run: mvn -B --activate-profiles jenkins-on-demand -Dmaven.gpg.skip=true -Dmaven.javadoc.skip=true -Dmaven.test.failure.ignore=false -Dhpccconn=https://eclwatch.default:8010 -Dwssqlconn=https://sql2ecl.default:8510 install
