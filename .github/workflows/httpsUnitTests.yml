@@ -20,24 +20,6 @@ jobs:
       with:
         java-version: 11
 
-    - name: Get Java Version
-      run: java -version
-
-    - uses: actions/checkout@v3
-      with:
-        ref: ${{ github.event.pull_request.head.sha }}
-        fetch-depth: 0
-
-    # - name: Rebase
-    #   run: |
-    #     git config user.email 'hpccsystems@lexisnexisrisk.com'
-    #     git config user.name 'hpccsystems development'
-    #     git rebase origin/${{ github.event.pull_request.base.ref }}
-    #     git log --pretty=one -n 15
-
-    - name: Test Build with Maven
-      run: mvn package -DskipTests=true -Dmaven.gpg.skip=true -Dmaven.javadoc.skip=true
-
     - name: Install K8s
       uses: balchua/microk8s-actions@v0.3.2
       with:
@@ -89,6 +71,18 @@ jobs:
         helm repo add hpcc https://hpcc-systems.github.io/helm-chart
         helm repo update
         helm install myhpcc hpcc/hpcc --set global.image.version=latest -f values.yaml
+
+    - uses: actions/checkout@v3
+      with:
+        ref: ${{ github.event.pull_request.head.sha }}
+        fetch-depth: 0
+
+    # - name: Rebase
+    #   run: |
+    #     git config user.email 'hpccsystems@lexisnexisrisk.com'
+    #     git config user.name 'hpccsystems development'
+    #     git rebase origin/${{ github.event.pull_request.base.ref }}
+    #     git log --pretty=one -n 15
 
     - name: Wait for ECLWatch Startup
       run: |
