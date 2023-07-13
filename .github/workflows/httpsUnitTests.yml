@@ -20,6 +20,9 @@ jobs:
       with:
         java-version: 11
 
+    - name: Get Java Version
+      run: java -version
+
     - name: Test Build with Maven
       run: mvn -B --activate-profiles jenkins-on-demand -DskipTests=true -Dmaven.gpg.skip=true -Dmaven.javadoc.skip=true
 
