@@ -1,6 +1,16 @@
 package org.hpccsystems.commons;
 
 import java.math.BigInteger;
+import java.security.KeyStore;
+import java.security.cert.X509Certificate;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.List;
+import java.util.stream.Collectors;
+
+import javax.net.ssl.TrustManagerFactory;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
 
 import org.hpccsystems.commons.utils.Utils;
 import org.junit.Assert;
@@ -10,6 +20,31 @@ import org.junit.experimental.categories.Category;
 @Category(org.hpccsystems.commons.annotations.BaseTests.class)
 public class UtilsTests
 {
+
+    @Test
+    public void listAllCerts()
+    {
+        TrustManagerFactory trustManagerFactory = null;
+        try {
+            trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+            trustManagerFactory.init((KeyStore) null);
+        } catch (Exception e) {
+            System.out.println("Failed during trust manager creation or init.");
+        }
+
+        List<TrustManager> trustManagers = Arrays.asList(trustManagerFactory.getTrustManagers());
+        List<X509Certificate> certificates = trustManagers.stream()
+            .filter(X509TrustManager.class::isInstance)
+            .map(X509TrustManager.class::cast)
+            .map(trustManager -> Arrays.asList(trustManager.getAcceptedIssuers()))
+            .flatMap(Collection::stream)
+            .collect(Collectors.toList());
+
+        System.out.println("\nAll Certs:\n----------------------------------------------------");
+        for (X509Certificate cert : certificates) {
+            System.out.println("Cert: " + cert.getSerialNumber() + " DN: " + cert.getSubjectDN());
+        }
+    }
 
     @Test
     public void testU8Extraction()
