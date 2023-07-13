@@ -24,7 +24,7 @@ jobs:
       run: java -version
 
     - name: Test Build with Maven
-      run: mvn -B --activate-profiles jenkins-on-demand -DskipTests=true -Dmaven.gpg.skip=true -Dmaven.javadoc.skip=true
+      run: mvn package -DskipTests=true -Dmaven.gpg.skip=true -Dmaven.javadoc.skip=true
 
     - name: Install K8s
       uses: balchua/microk8s-actions@v0.3.2
