@@ -102,17 +102,18 @@ jobs:
         sudo -- sh -c -e "echo '${{ env.SQL_TO_ECL_IP }} sql2ecl.default' >> /etc/hosts";
 
     - name: Trust Certs
-      # sudo keytool -import -keystore $JAVA_HOME/jre/lib/security/cacerts -storepass changeit -noprompt -alias eclwatch-tls -file cert.der
+      # sudo keytool -import -keystore $JAVA_HOME/lib/security/cacerts -storepass changeit -noprompt -alias eclwatch-tls -file cert.der
       # sudo keytool -import -keystore $JAVA_HOME/cacerts -storepass changeit -noprompt -alias eclwatch-tls -file cert.der
+      # sudo keytool -import -cacerts -storepass changeit -noprompt -alias eclwatch-tls -file cert.der
       run: |
         ls $JAVA_HOME
         find $JAVA_HOME -name "cacerts"
         openssl s_client -showcerts -connect eclwatch.default:8010 < /dev/null | openssl x509 -outform DER > cert.der
-        sudo keytool -import -cacerts -storepass changeit -noprompt -alias eclwatch-tls -file cert.der
+        sudo keytool -import -keystore $JAVA_HOME/lib/security/cacerts -storepass changeit -noprompt -alias eclwatch-tls -file cert.der
         openssl s_client -showcerts -connect rowservice.default:7600 < /dev/null | openssl x509 -outform DER > cert.der
-        sudo keytool -import -cacerts -storepass changeit -noprompt -alias dafilesrv-tls -file cert.der
+        sudo keytool -import -keystore $JAVA_HOME/lib/security/cacerts -storepass changeit -noprompt -alias dafilesrv-tls -file cert.der
         openssl s_client -showcerts -connect sql2ecl.default:8510 < /dev/null | openssl x509 -outform DER > cert.der
-        sudo keytool -import -cacerts -storepass changeit -noprompt -alias sqltoecl-tls -file cert.der
+        sudo keytool -import -keystore $JAVA_HOME/lib/security/cacerts -storepass changeit -noprompt -alias sqltoecl-tls -file cert.der
 
     # speed things up with caching from https://docs.github.com/en/actions/guides/building-and-testing-java-with-maven
     - name: Cache Maven packages
@@ -123,4 +124,4 @@ jobs:
         restore-keys: ${{ runner.os }}-m2
 
     - name: Build with Maven
-      run: mvn -B --activate-profiles jenkins-on-demand -Dmaven.gpg.skip=true -Dmaven.javadoc.skip=true -Dmaven.test.failure.ignore=false -Dhpccconn=https://eclwatch.default:8010 -Dwssqlconn=https://sql2ecl.default:8510 install
+      run: mvn -B --activate-profiles jenkins-on-demand -Djavax.net.ssl.keyStore=$JAVA_HOME/lib/security/cacerts -Dmaven.gpg.skip=true -Dmaven.javadoc.skip=true -Dmaven.test.failure.ignore=false -Dhpccconn=https://eclwatch.default:8010 -Dwssqlconn=https://sql2ecl.default:8510 install
