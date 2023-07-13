@@ -24,26 +24,30 @@ public class UtilsTests
     @Test
     public void listAllCerts()
     {
-        TrustManagerFactory trustManagerFactory = null;
-        try {
-            trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
-            trustManagerFactory.init((KeyStore) null);
-        } catch (Exception e) {
-            System.out.println("Failed during trust manager creation or init.");
-        }
 
-        List<TrustManager> trustManagers = Arrays.asList(trustManagerFactory.getTrustManagers());
-        List<X509Certificate> certificates = trustManagers.stream()
-            .filter(X509TrustManager.class::isInstance)
-            .map(X509TrustManager.class::cast)
-            .map(trustManager -> Arrays.asList(trustManager.getAcceptedIssuers()))
-            .flatMap(Collection::stream)
-            .collect(Collectors.toList());
+        System.out.println("\nKey Store Locations:\n----------------------------------------------------");
+        System.out.println("Keystore location: " + System.getProperty("javax.net.ssl.keyStore"));
+        System.out.println("Trust store location: " + System.getProperty("javax.net.ssl.trustStore"));
+        // TrustManagerFactory trustManagerFactory = null;
+        // try {
+        //     trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+        //     trustManagerFactory.init((KeyStore) null);
+        // } catch (Exception e) {
+        //     System.out.println("Failed during trust manager creation or init.");
+        // }
 
-        System.out.println("\nAll Certs:\n----------------------------------------------------");
-        for (X509Certificate cert : certificates) {
-            System.out.println("Cert: " + cert.getSerialNumber() + " DN: " + cert.getSubjectDN());
-        }
+        // List<TrustManager> trustManagers = Arrays.asList(trustManagerFactory.getTrustManagers());
+        // List<X509Certificate> certificates = trustManagers.stream()
+        //     .filter(X509TrustManager.class::isInstance)
+        //     .map(X509TrustManager.class::cast)
+        //     .map(trustManager -> Arrays.asList(trustManager.getAcceptedIssuers()))
+        //     .flatMap(Collection::stream)
+        //     .collect(Collectors.toList());
+
+        // System.out.println("\nAll Certs:\n----------------------------------------------------");
+        // for (X509Certificate cert : certificates) {
+        //     System.out.println("Cert: " + cert.getSerialNumber() + " DN: " + cert.getSubjectDN());
+        // }
     }
 
     @Test
