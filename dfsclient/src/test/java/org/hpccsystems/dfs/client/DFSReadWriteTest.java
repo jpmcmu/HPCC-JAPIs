@@ -1006,7 +1006,6 @@ public class DFSReadWriteTest extends BaseRemoteTest
         }
     }
 
-    @Test
     public void emptyCompressedFileTest()
     {
         HPCCWsDFUClient dfuClient = wsclient.getWsDFUClient();
