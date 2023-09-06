@@ -1153,7 +1153,7 @@ public class DFSReadWriteTest extends BaseRemoteTest
         HPCCWsDFUClient dfuClient = wsclient.getWsDFUClient();
 
         String clusterName = this.thorClusterFileGroup;
-        System.out.println("Create Start");
+        System.out.println("Calling createFile: " + fileName);
 
         CompressionAlgorithm compressionAlgorithm = CompressionAlgorithm.NONE;
         DFUCreateFileWrapper createResult = null;
@@ -1166,7 +1166,6 @@ public class DFSReadWriteTest extends BaseRemoteTest
         {
             createResult = dfuClient.createFile(fileName, clusterName, eclRecordDefn, connTO==null?300:connTO, false, DFUFileTypeWrapper.Flat, "");
         }
-        System.out.println("Create Finished");
 
         DFUFilePartWrapper[] dfuFileParts = createResult.getFileParts();
         DataPartition[] hpccPartitions = DataPartition.createPartitions(dfuFileParts,
@@ -1185,6 +1184,7 @@ public class DFSReadWriteTest extends BaseRemoteTest
         long bytesWritten = 0;
         for (int partitionIndex = 0; partitionIndex < hpccPartitions.length; partitionIndex++)
         {
+            System.out.println("Writing partition: " + partitionIndex);
             int numRecordsInPartition = recordsPerPartition;
             if (partitionIndex == dfuFileParts.length - 1)
             {
@@ -1215,15 +1215,15 @@ public class DFSReadWriteTest extends BaseRemoteTest
             }
             fileWriter.close();
             bytesWritten += fileWriter.getBytesWritten();
+            System.out.println("Finished partition: " + partitionIndex + " bytes written: " + bytesWritten);
         }
 
         //------------------------------------------------------------------------------
         //  Publish and finalize the temp file
         //------------------------------------------------------------------------------
 
-        System.out.println("Publish Start");
+        System.out.println("Calling publishFile: " + fileName);
         dfuClient.publishFile(createResult.getFileID(), eclRecordDefn, currentRecord, bytesWritten, true);
-        System.out.println("Publish Finished");
     }
 
     @Test

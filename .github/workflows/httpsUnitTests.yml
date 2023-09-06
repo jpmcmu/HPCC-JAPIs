@@ -5,6 +5,9 @@ on:
     branches:
       - "master"
       - "candidate-*"
+  push:
+    branches:
+      - "GATest"
 
   workflow_dispatch:
 
