@@ -97,6 +97,7 @@ jobs:
             if issuem:
                 nameCorrectionPattern = re.compile("hpcc4j", re.IGNORECASE)
                 issue_name = nameCorrectionPattern.sub("JAPI",issuem.group())
+                print("Updated issue name" + issue_name)
 
                 userDict = {
                     'kunalaswani': 'kunal.aswani',
