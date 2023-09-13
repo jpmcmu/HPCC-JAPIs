@@ -90,6 +90,8 @@ jobs:
             comments_url = os.environ['COMMENTS_URL']
 
             print("%s %s %s" % (title, user, comments_url))
+            print("Jira URL" + jira_url)
+
             result = ''
             issuem = re.search("(HPCC4J|JAPI)-[0-9]+", title)
             if issuem:
