@@ -204,7 +204,7 @@ jobs:
                 result += resolveIssue(jira, issue, fixVersions)
                 jira.add_comment(issue, result)
             else:
-                print('Unable to find Jira issue name in title')
+                print('Unable to find Jira issue name in title: ' + title)
 
             print(result)
         shell: python
