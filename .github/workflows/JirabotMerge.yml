@@ -20,6 +20,10 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
+      - name: Check Git Tags
+        run: |
+          git tag --list | head -n 10
+
       - uses: "actions/setup-python@v2"
         with:
           python-version: "3.8"
