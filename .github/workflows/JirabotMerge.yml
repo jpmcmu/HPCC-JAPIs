@@ -196,7 +196,7 @@ jobs:
             branch_name = os.environ['BRANCH_NAME']
             comments_url = os.environ['COMMENTS_URL']
 
-            print("test 4")
+            print("test 5")
 
             print("%s %s %s" % (title, user, comments_url))
             result = ''
