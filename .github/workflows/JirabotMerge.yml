@@ -23,6 +23,7 @@ jobs:
       - name: Check Git Tags
         run: |
           git tag --list | head -n 10
+          git tag --list 'hpcc4j_*-release' --sort=-v:refname | head -n 1
 
       - uses: "actions/setup-python@v2"
         with:
