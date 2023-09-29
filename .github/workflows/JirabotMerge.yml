@@ -24,6 +24,9 @@ jobs:
         run: |
           git tag --list | head -n 10
           git tag --list 'hpcc4j_*-release' --sort=-v:refname | head -n 1
+          git fetch --tags
+          git tag --list | head -n 10
+          git tag --list 'hpcc4j_*-release' --sort=-v:refname | head -n 1
 
       - uses: "actions/setup-python@v2"
         with:
@@ -197,7 +200,7 @@ jobs:
             branch_name = os.environ['BRANCH_NAME']
             comments_url = os.environ['COMMENTS_URL']
 
-            print("test 7")
+            print("test 6")
 
             print("%s %s %s" % (title, user, comments_url))
             result = ''
