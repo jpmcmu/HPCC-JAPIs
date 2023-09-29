@@ -80,7 +80,7 @@ jobs:
                 if versionMatch:
                     return extractVersion(versionMatch.group(1))
                 else:
-                    print('Unable to extract version from git tag.')
+                    print('Unable to extract version from git tag: ' + latestGitTag)
                     sys.exit(2)
 
             def buildVersionString(version):
