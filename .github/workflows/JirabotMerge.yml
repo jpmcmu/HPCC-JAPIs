@@ -27,7 +27,6 @@ jobs:
           git ls-remote --tags origin
           git ls-remote --tags upstream
 
-
       - uses: "actions/setup-python@v2"
         with:
           python-version: "3.8"
@@ -200,7 +199,7 @@ jobs:
             branch_name = os.environ['BRANCH_NAME']
             comments_url = os.environ['COMMENTS_URL']
 
-            print("test 7")
+            print("test 8")
 
             print("%s %s %s" % (title, user, comments_url))
             result = ''
