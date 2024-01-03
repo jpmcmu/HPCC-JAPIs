@@ -89,11 +89,23 @@ public class FileUtilityTest extends BaseRemoteTest
                                 "-dest_cluster", this.thorClusterFileGroup,
                                 "-user", this.hpccUser, "-pass", this.hpccPass };
 
+            // Print out all files in the current directory
+            File dir = new File(localDir);
+            File[] files = dir.listFiles();
+            for (File file : files) {
+                // Print out full path
+                System.out.println(file.getAbsolutePath());
+            }
+
             JSONArray results = FileUtility.run(writeArgs);
             JSONObject result = results.optJSONObject(0);
             Assert.assertNotNull("FileUtility result should not be null.", result);
 
             boolean success = result.optBoolean("successful",false);
+            if (!success) {
+                System.out.println("Result: " + result.toString(2));
+            }
+
             Assert.assertTrue("FileUtility operation didn't complete successfully", success);
         }
     }
