@@ -45,6 +45,10 @@ jobs:
         git rebase origin/${{ github.event.pull_request.base.ref }}
         git log --pretty=one -n 15
 
+    - name: Check git tags
+      run: |
+        git tag --list 'hpcc4j_*-release' --sort=-v:refname
+
     - name: Extract Latest Tagged Version
       id: extract_version
       env:
