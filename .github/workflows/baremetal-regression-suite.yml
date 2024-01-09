@@ -5,6 +5,9 @@ on:
     branches:
       - "master"
       - "candidate-*"
+  push:
+    branches:
+      - "HPCC4J-553-Test"
 
   workflow_dispatch:
 
