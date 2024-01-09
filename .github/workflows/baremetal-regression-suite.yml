@@ -35,8 +35,6 @@ jobs:
     - uses: actions/checkout@v4
       with:
         # ref: ${{ github.event.pull_request.head.sha }}
-        repository: hpcc-systems/hpcc4j
-        ref: '2335fd03e6a568e7c5adb86f7464c4a15d46a6bb'
         fetch-depth: 0
         fetch-tags: true
 
