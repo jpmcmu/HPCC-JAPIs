@@ -55,7 +55,8 @@ public abstract class BaseRemoteTest
     protected static Platform platform;
     protected static HPCCWsClient wsclient;
 
-    protected final static String connString = System.getProperty("hpccconn", "http://localhost:8010");
+    // protected final static String connString = System.getProperty("hpccconn", "http://localhost:8010");
+    protected final static String connString = System.getProperty("hpccconn", "https://eclwatch.default:8010");
     protected static String thorClusterFileGroup = System.getProperty("thorgroupname");
     protected final static String thorclustername = System.getProperty("thorclustername", "thor");
 
