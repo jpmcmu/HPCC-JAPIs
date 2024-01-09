@@ -47,6 +47,7 @@ jobs:
 
     - name: Check git tags
       run: |
+        git tag --list | head -n 1000
         git tag --list 'hpcc4j_*-release' --sort=-v:refname
 
     - name: Extract Latest Tagged Version
