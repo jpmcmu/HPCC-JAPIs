@@ -202,7 +202,7 @@ jobs:
                     'server': jira_url
                 }
 
-                print('Issue Name: ' + issue_name)
+                print('Issue Name: ' + issue_name + ' Test')
 
                 jira = JIRA(options=options, basic_auth=(jirabot_user, jirabot_pass))
                 issue = jira.issue(issue_name)
