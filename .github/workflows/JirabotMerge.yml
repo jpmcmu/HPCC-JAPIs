@@ -27,9 +27,10 @@ jobs:
       - name: "Checkout"
         uses: actions/checkout@v2
         with:
-          ref: ${{ github.event.pull_request.base.ref }}
+          repository: "hpcc-systems/HPCC-Platform"
           fetch-depth: 0
           fetch-tags: true
+        #   ref: ${{ github.event.pull_request.base.ref }}
       - name: "Run"
         env:
           JIRABOT_USERNAME : ${{ secrets.JIRABOT_USERNAME }}
