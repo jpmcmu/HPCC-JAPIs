@@ -208,10 +208,12 @@ jobs:
                     sys.exit(1)
 
                 result = 'Jirabot Action Result:\n'
-
                 fixVersions = generateFixVersionList(jira, branch_name)
-                result += resolveIssue(jira, issue, fixVersions)
-                jira.add_comment(issue, result)
+
+                print(fixVersions)
+
+                # result += resolveIssue(jira, issue, fixVersions)
+                # jira.add_comment(issue, result)
             else:
                 print('Unable to find Jira issue name in title')
 
