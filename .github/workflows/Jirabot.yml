@@ -35,11 +35,51 @@ jobs:
           PULL_URL: ${{ github.event.pull_request.html_url }}
           COMMENTS_URL: ${{ github.event.pull_request.comments_url }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
+          USER_DICT: ${{ vars.USER_DICT }}
         run: |
             import os
             import re
+            import json
             from jira.client import JIRA
+
+            def updateIssue(jira, issue, user: str, pull_url: str) -> str:
+                result = ''
+
+                statusName = str(issue.fields.status)
+                if statusName == 'Open':
+                    transition = 'Start Progress'
+                elif statusName == 'In Progress':
+                    transition = ''
+                elif statusName == 'Resolved':
+                    transition = 'Reopen Issue'
+                elif statusName == 'Closed':
+                    transition = 'Reopen Issue'
+                else:
+                    transition = ''
+
+                if transition != '':
+                    try:
+                        jira.transition_issue(issue, transition)
+                        result += 'Workflow Transition: ' + transition + '\n'
+                    except Exception as error:
+                        transitions = jira.transitions(issue)
+                        result += 'Error: Transition: "' + transition + '" failed with: "' + str(error) + '" Valid transitions=' + str(transitions) + '\n'
+
+                if issue.fields.customfield_10010 is None:
+                    issue.update(fields={'customfield_10010': pull_url})
+                    result += 'Updated PR\n'
+                elif issue.fields.customfield_10010 is not None and issue.fields.customfield_10010 != pull_url:
+                    result += 'Additional PR: ' + pull_url + '\n'
+
+                if user:
+                    if issue.fields.assignee is None:
+                        jira.assign_issue(issue, user)
+                        result += 'Assigning user: ' + user + '\n'
+                    elif issue.fields.assignee is not None and issue.fields.assignee.name.lower() != user.lower():
+                        result += 'Changing assignee from: ' + issue.fields.assignee.name + ' to: ' + user + '\n'
+                        jira.assign_issue(issue, user)
+
+                return result
 
             jirabot_user = os.environ['JIRABOT_USERNAME']
             jirabot_pass = os.environ['JIRABOT_PASSWORD']
@@ -57,18 +97,14 @@ jobs:
             if issuem:
                 nameCorrectionPattern = re.compile("hpcc4j", re.IGNORECASE)
                 issue_name = nameCorrectionPattern.sub("JAPI",issuem.group())
-                if user == 'kunalaswani':
-                    user = 'kunal.aswani'
-                if user == 'timothyklemm':
-                    user = 'klemti01'
-                if user == 'jpmcmu':
-                    user = 'mcmuja01'
-                if user == 'asselitx':
-                    user = 'terrenceasselin'
-                if user == 'jeclrsg':
-                    user = 'clemje01'
-                if user == 'jackdelv':
-                    user = 'delvecja'
+
+                userDict = json.loads(os.environ['USER_DICT'])
+                if not isinstance(userDict, dict):
+                    userDict = {}
+
+                if user in userDict:
+                    user = userDict.get(user, user)
+
                 options = {
                   'server': jira_url
                 }
