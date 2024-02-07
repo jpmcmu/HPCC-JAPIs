@@ -72,7 +72,6 @@ jobs:
                     result += 'Additional PR: ' + pull_url + '\n'
 
                 if prAuthor:
-                    print('Assigning PR Author: ' + prAuthor + ' to jira issue')
                     if issue.fields.assignee is None:
                         jira.assign_issue(issue, prAuthor)
                         result += 'Assigning user: ' + prAuthor + '\n'
