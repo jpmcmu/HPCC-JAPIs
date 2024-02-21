@@ -80,6 +80,7 @@ jobs:
                     result += 'Updated PR\n'
                 elif currentPR is not None and currentPR != pull_url:
                     result += 'Additional PR: ' + pull_url + '\n'
+                print("Test " + prFieldName + " " + str(currentPR) + " " + pull_url)
 
                 if prAuthor:
                     if issue.fields.assignee is None:
