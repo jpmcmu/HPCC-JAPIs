@@ -69,6 +69,18 @@ jobs:
         cat <<EOF > values.yaml
         certificates:
           enabled: true
+          issuers:
+            local:
+              domain: mylocal.io
+              kind: Issuer
+              name: hpcc-local-issuer
+              spec:
+                ca:
+                  secretName: hpcc-local-issuer-key-pair
+            public:
+              domain: mylocal.io
+              kind: ClusterIssuer
+              name: zerossl
         dafilesrv:
           - name: rowservice
             disabled: false
