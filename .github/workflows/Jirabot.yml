@@ -141,6 +141,8 @@ jobs:
                     prAuthor = None
                     print('Error: Unable to find Jira user: ' + prAuthor + ' with error: ' + str(error) + ' continuing without assigning')
 
+                print("Jira User: " + str(jiraUser))
+
                 issue = jira.issue(issue_name)
                 result = 'Jirabot Action Result:\n'
 
