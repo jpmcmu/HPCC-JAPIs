@@ -85,9 +85,18 @@ jobs:
                     if issue.fields.assignee is None:
                         jira.assign_issue(issue, prAuthor)
                         result += 'Assigning user: ' + prAuthor + '\n'
-                    elif issue.fields.assignee is not None and issue.fields.assignee.name.lower() != prAuthor.lower():
-                        result += 'Changing assignee from: ' + issue.fields.assignee.name + ' to: ' + prAuthor + '\n'
-                        jira.assign_issue(issue, prAuthor)
+                    else:
+                        # Print out all attributes on the assignee object
+                        print('Assignee: ' + str(issue.fields.assignee))
+
+                        # Check if assignee has a username field
+                        username = None
+                        if hasattr(issue.fields.assignee, 'username'):
+                            username = issue.fields.assignee.username
+
+                        if username is None or username.lower() != prAuthor.lower():
+                            result += 'Changing assignee from: ' + username + ' to: ' + prAuthor + '\n'
+                            jira.assign_issue(issue, prAuthor)
 
                 return result
 
