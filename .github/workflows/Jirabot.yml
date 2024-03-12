@@ -45,7 +45,7 @@ jobs:
             import json
             from jira.client import JIRA
 
-            def updateIssue(jira, issue, prAuthor: str, propertyMap: dict, pull_url: str) -> str:
+            def updateIssue(jira, issue, prAuthorEmail, propertyMap: dict, pull_url: str) -> str:
                 result = ''
 
                 statusName = str(issue.fields.status)
@@ -81,22 +81,17 @@ jobs:
                 elif currentPR is not None and currentPR != pull_url:
                     result += 'Additional PR: ' + pull_url + '\n'
 
-                if prAuthor:
+                if prAuthorEmail:
                     if issue.fields.assignee is None:
-                        jira.assign_issue(issue, prAuthor)
-                        result += 'Assigning user: ' + prAuthor + '\n'
+                        jira.assign_issue(issue, prAuthorEmail)
+                        result += 'Assigning user: ' + prAuthorEmail + '\n'
                     else:
-                        # Print out all attributes on the assignee object
-                        print('Assignee: ' + str(issue.fields.assignee))
-
-                        # Check if assignee has a username field
-                        username = None
-                        if hasattr(issue.fields.assignee, 'username'):
-                            username = issue.fields.assignee.username
-
-                        if username is None or username.lower() != prAuthor.lower():
-                            result += 'Changing assignee from: ' + username + ' to: ' + prAuthor + '\n'
-                            jira.assign_issue(issue, prAuthor)
+                        assigneeEmail = None
+                        if issue.fields.assignee:
+                            assigneeEmail = issue.fields.asignee.emailAddress
+                        if asigneeEmail is None or assigneeEmail.lower() != assigneeEmail.lower():
+                            result += 'Changing assignee from: ' + asigneeEmail + ' to: ' + prAuthorEmail + '\n'
+                            jira.assign_issue(issue, prAuthorEmail)
 
                 return result
 
@@ -131,17 +126,24 @@ jobs:
 
                 jira = JIRA(options=options, basic_auth=(jirabot_user, jirabot_pass))
 
-                # Check if prAuthor exists in Jira
-                try:
-                    jiraUser = jira.user(prAuthor)
-                    if jiraUser is None:
-                        prAuthor = None
-                        print('Error: Unable to find Jira user: ' + prAuthor + ' continuing without assigning')
-                except Exception as error:
-                    prAuthor = None
-                    print('Error: Unable to find Jira user: ' + prAuthor + ' with error: ' + str(error) + ' continuing without assigning')
+                isJiraCloud = False
+                if jira_url.find('atlassian.net') > 0:
+                    isJiraCloud = True
 
-                print("Jira User: " + str(jiraUser))
+                if isJiraCloud:
+                    res = jira.search_users(query=prAuthor)
+                    if res and len(res) > 0:
+                        jiraUser = res[0]
+                else:
+                    jiraUser = jira.user(prAuthor)
+
+                jiraUserEmail = None
+                if jiraUser is None:
+                    print('Error: Unable to find Jira user: ' + prAuthor + ' continuing without assigning')
+                else:
+                    jiraUserEmail = jiraUser.emailAddress
+
+                print("Jira User: " + str(jiraUserEmail))
 
                 issue = jira.issue(issue_name)
                 result = 'Jirabot Action Result:\n'
@@ -150,7 +152,7 @@ jobs:
                 if not isinstance(jiraIssuePropertyMap, dict):
                     jiraIssuePropertyMap = {}
 
-                result += updateIssue(jira, issue, prAuthor, jiraIssuePropertyMap, pull_url)
+                result += updateIssue(jira, issue, jiraUserEmail, jiraIssuePropertyMap, pull_url)
                 jira.add_comment(issue, result)
             else:
                 print('Unable to find Jira issue name in title')
