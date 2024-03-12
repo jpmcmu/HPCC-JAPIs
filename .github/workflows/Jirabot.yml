@@ -39,28 +39,20 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GHUB_JIRA_USER_MAP: ${{ vars.GHUB_JIRA_USER_MAP }}
           JIRA_ISSUE_PROPERTY_MAP: ${{ vars.JIRA_ISSUE_PROPERTY_MAP }}
+          JIRA_ISSUE_TRANSITION_MAP: ${{ vars.JIRA_ISSUE_TRANSITION_MAP }}
         run: |
             import os
             import re
             import json
             from jira.client import JIRA
 
-            def updateIssue(jira, issue, prAuthorEmail, propertyMap: dict, pull_url: str) -> str:
+            def updateIssue(jira, issue, prAuthorEmail : str, transitionMap: dict, propertyMap: dict, pull_url: str) -> str:
                 result = ''
 
                 statusName = str(issue.fields.status)
-                if statusName == 'Open':
-                    transition = 'Start Progress'
-                elif statusName == 'In Progress':
-                    transition = ''
-                elif statusName == 'Resolved':
-                    transition = 'Reopen Issue'
-                elif statusName == 'Closed':
-                    transition = 'Reopen Issue'
-                else:
-                    transition = ''
+                transition = transitionMap.get(statusName, None)
 
-                if transition != '':
+                if transition != None and transition != '':
                     try:
                         jira.transition_issue(issue, transition)
                         result += 'Workflow Transition: ' + transition + '\n'
@@ -126,6 +118,8 @@ jobs:
 
                 jira = JIRA(options=options, basic_auth=(jirabot_user, jirabot_pass))
 
+                # Need to change how we find users for Jira Cloud, unfortunately the API doesn't provide this information.
+                # At the moment checking if the URL contains atlassian.net appears to be the easiest way to determine if it's Jira Cloud.
                 isJiraCloud = False
                 if jira_url.find('atlassian.net') > 0:
                     isJiraCloud = True
@@ -148,11 +142,15 @@ jobs:
                 issue = jira.issue(issue_name)
                 result = 'Jirabot Action Result:\n'
 
+                transitionMap = json.loads(os.environ['JIRA_ISSUE_TRANSITION_MAP'])
+                if not isinstance(transitionMap, dict):
+                    transitionMap = {}
+
                 jiraIssuePropertyMap = json.loads(os.environ['JIRA_ISSUE_PROPERTY_MAP'])
                 if not isinstance(jiraIssuePropertyMap, dict):
                     jiraIssuePropertyMap = {}
 
-                result += updateIssue(jira, issue, jiraUserEmail, jiraIssuePropertyMap, pull_url)
+                result += updateIssue(jira, issue, jiraUserEmail, transitionMap, jiraIssuePropertyMap, pull_url)
                 jira.add_comment(issue, result)
             else:
                 print('Unable to find Jira issue name in title')
