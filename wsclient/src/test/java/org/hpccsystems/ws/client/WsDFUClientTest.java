@@ -211,6 +211,7 @@ public class WsDFUClientTest extends BaseRemoteTest
     @Test
     public void testGetFiles()
     {
+        Assert.assertTrue(false);
         try
         {
             recursiveGetFiles("");
@@ -225,6 +226,7 @@ public class WsDFUClientTest extends BaseRemoteTest
     @Test
     public void testGetFileContent()
     {
+        Assert.assertTrue(false);
         try
         {
             getFirstFileAvailable("benchmark");

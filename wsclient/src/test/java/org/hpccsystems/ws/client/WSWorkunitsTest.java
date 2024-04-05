@@ -59,6 +59,7 @@ public class WSWorkunitsTest extends BaseRemoteTest
     @Test
     public void testMultipleWsWUInits() throws InterruptedException
     {
+        Assert.assertTrue(false);
         Callable<String> callableTask = () ->
         {
             HPCCWsWorkUnitsClient wswu = new HPCCWsWorkUnitsClient(wsclient.connection);

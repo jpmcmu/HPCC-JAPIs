@@ -50,6 +50,7 @@ public class WUQueryTest extends BaseRemoteTest
     @Test
     public void testGetWorkunitByAppName() throws Exception, ArrayOfEspExceptionWrapper, ArrayOfECLExceptionWrapper
     {
+        Assert.assertTrue(false);
         ApplicationValueWrapper av=new ApplicationValueWrapper("HIPIE","testkey","testvalue");
         WorkunitWrapper wu = createWU("OUTPUT('1');", thorclustername, "1testGetWorkunitByAppName", "1user", av);
 
@@ -73,7 +74,7 @@ public class WUQueryTest extends BaseRemoteTest
     @Test
     public void testGetWorkunitSort() throws Exception
     {
-        
+
         assumeTrue("Testing WU sortBy failed to create First WU!", null != createWU("OUTPUT('a');", thorclustername, "aTestWorkunitSortBA", "aTestUser", new ApplicationValueWrapper("AppA","testkeyA","testvalueA")));
         assumeTrue("Testing WU sortBy failed to create Second WU!", null != createWU("OUTPUT('b');", thorclustername, "bTestWorkunitSortBy", "bTestUser", new ApplicationValueWrapper("AppB","testkeyB","testvalueB")));
 
