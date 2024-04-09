@@ -137,7 +137,7 @@ jobs:
                             alreadyHasFixVersion = True
 
                     if not alreadyHasFixVersion:
-                        jira.add_version(fixVersion, HPCC4J', fixVersion)
+                        jira.add_version(fixVersion, 'HPCC4J', fixVersion)
 
                 return fixVersions
 
@@ -219,7 +219,7 @@ jobs:
                 else:
                     issue = jira.issue(issue_name)
 
-                result = 'Jirabot Action Result:\n'
+                result = 'Test Jirabot Action Result:\n'
 
                 fixVersions = generateFixVersionList(jira, branch_name)
                 result += resolveIssue(jira, issue, fixVersions)
