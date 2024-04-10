@@ -220,11 +220,11 @@ jobs:
                 else:
                     issue = jira.issue(issue_name)
 
-                result = 'Jirabot Action Result:\n'
+                result = 'Test Jirabot Action Result:\n'
 
                 fixVersions = generateFixVersionList(jira, branch_name)
                 result += resolveIssue(jira, issue, fixVersions)
-                jira.issue_add_comment(issue_name, result)
+                # jira.issue_add_comment(issue_name, result)
             else:
                 print('Unable to find Jira issue name in title')
 
