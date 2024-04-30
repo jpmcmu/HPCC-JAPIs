@@ -467,6 +467,12 @@ public class RowServiceInputStream extends InputStream implements IProfilable
         }
     }
 
+    private String getTime()
+    {
+        // Get human readable time for logging
+        return java.time.LocalTime.now().toString();
+    }
+
     /**
      * Returns RestartInformation for the given streamPos if possible.
      *
@@ -846,9 +852,14 @@ public class RowServiceInputStream extends InputStream implements IProfilable
             this.handle = response.handle;
             if (this.handle <= 0 && !inTokenRetry)
             {
+                String retryTrans = this.makeTokenRequest();
+
+                System.out.println("Thread: " + Thread.currentThread().getId() + " Time: " + getTime() + " File Part: "
+                    + " Sending read request, with cursor retry. Stream Pos: " + this.streamPos +
+                    + this.dataPart.getThisPart() + " Request:\n" + retryTrans);
+
                 inTokenRetry = true;
 
-                String retryTrans = this.makeTokenRequest();
                 int len = retryTrans.length();
                 try
                 {
@@ -917,7 +928,7 @@ public class RowServiceInputStream extends InputStream implements IProfilable
         }
 
         // Loop here while data is being consumed quickly enough
-        while (remainingDataInCurrentRequest > 0)
+        while (remainingDataInCurrentRequest > 0 && !this.closed.get())
         {
             if (CompileTimeConstants.PROFILE_CODE)
             {
@@ -963,6 +974,17 @@ public class RowServiceInputStream extends InputStream implements IProfilable
                 bytesToRead = Math.min(remainingBufferCapacity,
                               Math.min(bytesToRead,remainingDataInCurrentRequest));
                 dis.readFully(this.readBuffer, currentBufferLen, bytesToRead);
+            }
+            catch (NullPointerException e)
+            {
+                System.out.println("Thread: " + Thread.currentThread().getId() + " Time: " + getTime()
+                                +  " File Part: " + dataPart.getThisPart() +  " Null pointer exception during read");
+                prefetchException = new HpccFileException("Error during read block", e);
+                try
+                {
+                    close();
+                }
+                catch(Exception ie){}
             }
             catch (IOException e)
             {
@@ -1044,6 +1066,8 @@ public class RowServiceInputStream extends InputStream implements IProfilable
             if (this.simulateFail) this.handle = -1;
             String readAheadRequest = (this.forceTokenUse) ? this.makeTokenRequest() : this.makeHandleRequest();
 
+            System.out.println("Thread: " + Thread.currentThread().getId() + " Time: " + getTime() +  " File Part: " + this.dataPart.getThisPart()
+               + " Sending read request, Stream Pos: " + this.streamPos + " Request:\n" + readAheadRequest);
             try
             {
                 int requestLen = readAheadRequest.length();
@@ -1347,6 +1371,28 @@ public class RowServiceInputStream extends InputStream implements IProfilable
         {
             while (this.available() < 1)
             {
+                if (prefetchThread == null)
+                {
+                    prefetchData();
+
+                    // Sleep after each prefetch to prevent hot loop from eating CPU resources
+                    try
+                    {
+                        if (CompileTimeConstants.PROFILE_CODE)
+                        {
+                            long sleepTime = System.nanoTime();
+                            Thread.sleep(SHORT_SLEEP_MS);
+                            sleepTime = System.nanoTime() - sleepTime;
+                            sleepTimeNS += sleepTime;
+                        }
+                        else
+                        {
+                            Thread.sleep(SHORT_SLEEP_MS);
+                        }
+                    }
+                    catch(InterruptedException e) {/*We don't care about waking early*/}
+                }
+
                 long currentWaitNS = System.nanoTime() - waitNS;
                 if (currentWaitNS >= MAX_HOT_LOOP_NS)
                 {
@@ -1572,6 +1618,7 @@ public class RowServiceInputStream extends InputStream implements IProfilable
                         // So we don't care as much about individual packet latency or connection time overhead
                         sock.setPerformancePreferences(0, 1, 2);
                         sock.connect(new InetSocketAddress(this.getIP(), this.dataPart.getPort()), this.connectTimeout);
+                        sock.setKeepAlive(true);
 
                         log.debug("Attempting SSL handshake...");
                         ((SSLSocket) sock).startHandshake();
@@ -1589,8 +1636,10 @@ public class RowServiceInputStream extends InputStream implements IProfilable
                         // So we don't care as much about individual packet latency or connection time overhead
                         sock.setPerformancePreferences(0, 1, 2);
                         sock.connect(new InetSocketAddress(this.getIP(), this.dataPart.getPort()), this.connectTimeout);
+                        sock.setKeepAlive(true);
                     }
 
+                    System.out.println("Thread: " + Thread.currentThread().getId() + " Time: " + getTime() + " Started connection: " + sock.toString());
                     this.sock.setSoTimeout(socketOpTimeoutMs);
 
                     log.debug("Connected: Remote address = " + sock.getInetAddress().toString() + " Remote port = " + sock.getPort());
@@ -1618,10 +1667,12 @@ public class RowServiceInputStream extends InputStream implements IProfilable
                 // Check protocol version
                 //------------------------------------------------------------------------------
 
-                try
-                {
-                    String msg = makeGetVersionRequest();
-                    int msgLen = msg.length();
+            try
+            {
+                String msg = makeGetVersionRequest();
+                System.out.println("Thread: " + Thread.currentThread().getId() + " Time: " + getTime() + " File Part: " + this.dataPart.getThisPart()
+                    + " Sending version check request, Request:\n" + msg);
+                int msgLen = msg.length();
 
                     this.dos.writeInt(msgLen);
                     this.dos.write(msg.getBytes(HPCCCharSet), 0, msgLen);
@@ -1648,6 +1699,9 @@ public class RowServiceInputStream extends InputStream implements IProfilable
                     }
                     catch (IOException e)
                     {
+
+                        System.out.println("Thread: " + Thread.currentThread().getId() + " Time: " + getTime() +  " File Part: " + dataPart.getThisPart()
+                        +  "Error while attempting to read version response: " +  e.getMessage());
                         throw new HpccFileException("Error while attempting to read version response.", e);
                     }
 
@@ -1671,6 +1725,9 @@ public class RowServiceInputStream extends InputStream implements IProfilable
                         readTrans = makeTokenRequest();
                     }
 
+                    // Get human readable times
+                    System.out.println("Thread: " + Thread.currentThread().getId() + " Time: " + getTime() + " File Part: "
+                                        + this.dataPart.getThisPart() + " Sending intial read request");
                     int transLen = readTrans.length();
                     this.dos.writeInt(transLen);
                     this.dos.write(readTrans.getBytes(HPCCCharSet), 0, transLen);
@@ -2121,6 +2178,8 @@ public class RowServiceInputStream extends InputStream implements IProfilable
 
         try
         {
+            System.out.println("Thread: " + Thread.currentThread().getId() + " Time: " + getTime() + " File Part: " + this.dataPart.getThisPart()
+                + " Sending close file request, Bytes Read: " + this.streamPos + " Request:\n" + closeFileRequest);
             this.dos.writeInt(jsonRequestLen + 4 + 1);
             this.dos.write((int)RFCCodes.RFCStreamGeneral);
             this.dos.writeInt(jsonRequestLen);
@@ -2208,6 +2267,8 @@ public class RowServiceInputStream extends InputStream implements IProfilable
         }
         catch (IOException e)
         {
+            System.out.println("Thread: " + Thread.currentThread().getId() + " Time: " + getTime() +  " File Part: " + dataPart.getThisPart()
+            +  " Error while attempting to read response: " +  e.getMessage());
             throw new HpccFileException("Error while attempting to read row service response: ", e);
         }
 
