@@ -75,20 +75,44 @@ public class ReadIssue
         String pass = cmd.getOptionValue("pass");
         String cluster = cmd.getOptionValue("cluster", "thor");
 
-        // Prompt user, should we create a new file or use an existing one?
-        System.out.println("Generate test file? (y/n)");
         try
         {
-            int read = System.in.read();
-            if (read == 'y')
-            {
-                createFile(connString, user, pass, cluster);
-            }
+            Connection connection = new Connection(connString);
+            Platform platform = Platform.get(connection);
+            wsclient = platform.checkOutHPCCWsClient();
+        }
+        catch (Exception e)
+        {
+            System.out.println("Error connecting to HPCC: " + e.getMessage());
+            return;
+        }
+
+        // Prompt user, should we create a new file or use an existing one?
+        System.out.println("Generate test file? (y/n)");
+
+        int generateFile = 0;
+        try
+        {
+            generateFile = System.in.read();
         }
         catch (Exception e)
         {
             System.out.println("Error reading input: " + e.getMessage());
             return;
+        }
+
+        if (generateFile == 'y')
+        {
+            try
+            {
+                createFile(connString, user, pass, cluster);
+            }
+            catch (Exception e)
+            {
+                System.out.println("Error creating file: " + e.getMessage());
+                e.printStackTrace();
+                return;
+            }
         }
 
         for (int i = 0; i < 10; i++)
@@ -160,13 +184,6 @@ public class ReadIssue
 
     private static void runTest(String connString, String user, String pass, String clusterName) throws Exception
     {
-        if (wsclient == null)
-        {
-            Connection connection = new Connection(connString);
-            Platform platform = Platform.get(connection);
-            wsclient = platform.checkOutHPCCWsClient();
-        }
-
         // List<HPCCRecord> records = createFile(connString, user, pass, clusterName);
 
         HPCCFile file = new HPCCFile("benchmark::large_record_8MB::10rows", connString, user, pass);
