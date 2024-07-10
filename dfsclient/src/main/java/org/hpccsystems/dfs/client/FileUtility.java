@@ -33,6 +33,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 
+import io.opentelemetry.sdk.autoconfigure.AutoConfiguredOpenTelemetrySdk;
+
 import org.hpccsystems.commons.ecl.FieldDef;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -1777,6 +1779,8 @@ public class FileUtility
      */
     public static JSONArray run(String[] args)
     {
+        AutoConfiguredOpenTelemetrySdk.initialize().getOpenTelemetrySdk();
+
         Options options = getTopLevelOptions();
         CommandLineParser parser = new DefaultParser();
 
