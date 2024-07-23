@@ -99,6 +99,7 @@ jobs:
                     except Exception as error:
                         transitions = jira.get_issue_transitions(issueName)
                         result += 'Error: Transitioning to: "' + desiredStatus + '" failed with: "' + str(error) + '" Valid transitions=' + str(transitions) + '\n'
+                    time.sleep(5)
 
                 prFieldName = propertyMap.get('pullRequestFieldName', 'customfield_10010')
 
