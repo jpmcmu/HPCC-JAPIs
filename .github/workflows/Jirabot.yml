@@ -84,12 +84,12 @@ jobs:
                         result += 'Changing assignee from: ' + assigneeEmail + ' to: ' + prAuthorEmail + '\n'
                         jira.assign_issue(issueName, prAuthorId)
 
-                transitionFlow = []
+                transitionFlow = ['Merge Pending']
                 statusName = str(issueFields['status']['name'])
-                if statusName == 'Awaiting Information' or statusName == 'Unresourced':
-                    transitionFlow = ['Accepted', 'Active', 'Merge Pending']
-                elif statusName != 'Active':
-                    transitionFlow = ['Active', 'Merge Pending']
+                # if statusName == 'Awaiting Information' or statusName == 'Unresourced':
+                #     transitionFlow = ['Accepted', 'Active', 'Merge Pending']
+                # elif statusName != 'Active':
+                #     transitionFlow = ['Active', 'Merge Pending']
 
                 for desiredStatus in transitionFlow:
                     try:
@@ -99,7 +99,6 @@ jobs:
                     except Exception as error:
                         transitions = jira.get_issue_transitions(issueName)
                         result += 'Error: Transitioning to: "' + desiredStatus + '" failed with: "' + str(error) + '" Valid transitions=' + str(transitions) + '\n'
-                    time.sleep(5)
 
                 prFieldName = propertyMap.get('pullRequestFieldName', 'customfield_10010')
 
