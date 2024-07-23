@@ -60,6 +60,7 @@ jobs:
             from atlassian.jira import Jira
 
             def extractVersion(versionStr):
+                print("Test")
                 parts = versionStr.split('.')
                 if len(parts) != 3:
                     print('Invalid version: ' + versionStr)
