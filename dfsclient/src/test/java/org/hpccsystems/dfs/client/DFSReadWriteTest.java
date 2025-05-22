@@ -76,26 +76,31 @@ public class DFSReadWriteTest extends BaseRemoteTest
     @Test
     public void readBadlyDistributedFileTest() throws Exception
     {
+        System.out.println("Starting test: readBadlyDistributedFileTest");
         //this file only has data on two nodes
         HPCCFile file = new HPCCFile(datasets[1], connString , hpccUser, hpccPass);
         assertFalse(file.isTlkIndex());
         List<HPCCRecord> records = readFile(file, connTO, false);
         assertEquals("Not all records loaded",expectedCounts[1], records.size());
+        System.out.println("Completed test: readBadlyDistributedFileTest");
     }
 
     @Test
     public void readWithForcedTimeoutTest() throws Exception
     {
+        System.out.println("Starting test: readWithForcedTimeoutTest");
         HPCCFile file = new HPCCFile(datasets[0], connString , hpccUser, hpccPass);
 
         // Set expiration to 15,000ms
         List<HPCCRecord> records = readFile(file, 15000, true);
         assertEquals("Not all records loaded",expectedCounts[0], records.size());
+        System.out.println("Completed test: readWithForcedTimeoutTest");
     }
 
     @Test
     public void nullCharTests() throws Exception
     {
+        System.out.println("Starting test: nullCharTests");
         // Unicode
         boolean unicodePassed = true;
         {
@@ -207,11 +212,13 @@ public class DFSReadWriteTest extends BaseRemoteTest
 
         assertTrue("Unicode EOS character test failed. See mismatches above.", unicodePassed);
         assertTrue("Single byte EOS character test failed. See mismatches above.", sbcPassed);
+        System.out.println("Completed test: nullCharTests");
     }
 
     @Test
     public void longNullTerminatedStringTest() throws Exception
     {
+        System.out.println("Starting test: longNullTerminatedStringTest");
         Object[] fields = new Object[1];
         fields[0] = generateRandomString(4096);
         FieldDef recordDef = new FieldDef("RootRecord", FieldType.RECORD, "rec", 4, false, false, HpccSrcType.LITTLE_ENDIAN, new FieldDef[] { 
@@ -233,11 +240,13 @@ public class DFSReadWriteTest extends BaseRemoteTest
 
         HPCCRecord readRecord = (HPCCRecord) reader.getNext();
         assertEquals(record, readRecord);
+        System.out.println("Completed test: longNullTerminatedStringTest");
     }
 
     @Test
     public void integrationReadWriteBackTest() throws Exception
     {
+        System.out.println("Starting test: integrationReadWriteBackTest");
         for (int i = 0; i < datasets.length; i++)
         {
             HPCCFile file = new HPCCFile(datasets[i], connString, hpccUser, hpccPass);
@@ -280,11 +289,13 @@ public class DFSReadWriteTest extends BaseRemoteTest
                 fail("recs did not project correctly");
             }
         }
+        System.out.println("Completed test: integrationReadWriteBackTest");
     }
 
     @Test
     public void readBufferResizeTest() throws Exception
     {
+        System.out.println("Starting test: readBufferResizeTest");
         HPCCFile file = new HPCCFile(datasets[0], connString , hpccUser, hpccPass);
         DataPartition[] fileParts = file.getFileParts();
         if (fileParts == null || fileParts.length == 0)
@@ -328,11 +339,13 @@ public class DFSReadWriteTest extends BaseRemoteTest
         }
 
         assertEquals("Number of records did not match during read.", expectedCounts[0], records.size());
+        System.out.println("Completed test: readBufferResizeTest");
     }
 
     @Test
     public void readResumeTest() throws Exception
     {
+        System.out.println("Starting test: readResumeTest");
         HPCCFile file = new HPCCFile(datasets[0], connString , hpccUser, hpccPass);
 
         DataPartition[] fileParts = file.getFileParts();
@@ -413,11 +426,13 @@ public class DFSReadWriteTest extends BaseRemoteTest
             HPCCRecord resumedRecord = resumedRecords.get(i);
             assertEquals("Record " + i + ": did not match\n" + record + "\n" + resumedRecord, record, resumedRecord);
         }
+        System.out.println("Completed test: readResumeTest");
     }
 
     @Test
     public void nullWriteTest() throws Exception
     {
+        System.out.println("Starting test: nullWriteTest");
         String fname = datasets[1];
         HPCCFile file = new HPCCFile(fname, connString, hpccUser, hpccPass);
         file.setProjectList("");
@@ -470,11 +485,13 @@ public class DFSReadWriteTest extends BaseRemoteTest
                 assertEquals(((List) field).size(),0);
             }
         }
+        System.out.println("Completed test: nullWriteTest");
     }
 
     @Test
     public void nullElementTests()
     {
+        System.out.println("Starting test: nullElementTests");
         FieldDef[] stringSetElemFD = new FieldDef[1];
         stringSetElemFD[0] = new FieldDef("strValue", FieldType.STRING, "UTF8", 4, false, false, HpccSrcType.UTF8, new FieldDef[0]);
 
@@ -535,25 +552,30 @@ public class DFSReadWriteTest extends BaseRemoteTest
             records.add(record);
         }
         writeFile(records, "null::element::test", recordDef, connTO);
+        System.out.println("Completed test: nullElementTests");
     }
 
     @Test
     public void getMetadataTest() throws Exception
     {
+        System.out.println("Starting test: getMetadataTest");
         String fname = datasets[0];
         HPCCFile file = new HPCCFile(fname, connString, hpccUser, hpccPass);
         DFUFileDetailWrapper meta=file.getOriginalFileMetadata();
         assertNotNull("Meta was null for this file",meta);
         assertNotNull("Record count was null for this file",meta.getRecordCount());
         assertEquals(expectedCounts[0],Long.valueOf(meta.getRecordCountInt64()).intValue());
+        System.out.println("Completed test: getMetadataTest");
     }
 
     @Test
     public void getNullMetadataTest() throws Exception
     {
+        System.out.println("Starting test: getNullMetadataTest");
         HPCCFile file=new HPCCFile("notthere",connString,hpccUser,hpccPass);
         DFUFileDetailWrapper meta=file.getOriginalFileMetadata();
         assertNull("Meta should be null for nonexistent file",meta);
+        System.out.println("Completed test: getNullMetadataTest");
     }
 
     private static final String       ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-_";
@@ -578,6 +600,7 @@ public class DFSReadWriteTest extends BaseRemoteTest
     @Test
     public void integrationLargeRecordTest() throws Exception
     {
+        System.out.println("Starting test: integrationLargeRecordTest");
         // Create a large record dataset
         FieldDef[] fieldDefs = new FieldDef[3];
         fieldDefs[0] = new FieldDef("key", FieldType.INTEGER, "lNTEGER4", 4, true, false, HpccSrcType.LITTLE_ENDIAN, new FieldDef[0]);
@@ -595,7 +618,7 @@ public class DFSReadWriteTest extends BaseRemoteTest
             HPCCRecord record = new HPCCRecord(fields, recordDef);
             records.add(record);
         }
-        writeFile(records, "benchmark::large_record_8MB::10rows", recordDef,connTO);
+        writeFile(records, "benchmark::large_record_8MB::10rows", recordDef, connTO);
 
         HPCCFile file = new HPCCFile("benchmark::large_record_8MB::10rows", connString , hpccUser, hpccPass);
         records = readFile(file, connTO, false);
@@ -613,11 +636,13 @@ public class DFSReadWriteTest extends BaseRemoteTest
                 Assert.fail("Record mismatch");
             }
         }
+        System.out.println("Completed test: integrationLargeRecordTest");
     }
 
     @Test
     public void unsigned8ToDecimalTest() throws Exception
     {
+        System.out.println("Starting test: unsigned8ToDecimalTest");
         // Create a large record dataset
         FieldDef[] fieldDefs = new FieldDef[3];
         fieldDefs[0] = new FieldDef("field1", FieldType.INTEGER, "UNSIGNED8", 8, true, true, HpccSrcType.LITTLE_ENDIAN, new FieldDef[0]);
@@ -653,11 +678,13 @@ public class DFSReadWriteTest extends BaseRemoteTest
 
             assertEquals(readRecord, originalRecord);
         }
+        System.out.println("Completed test: unsigned8ToDecimalTest");
     }
 
     @Test
     public void longStringTest() throws Exception
     {
+        System.out.println("Starting test: longStringTest");
         // Create a large record dataset
         FieldDef[] fieldDefs = new FieldDef[4];
         fieldDefs[0] = new FieldDef("LongVarUnicode", FieldType.VAR_STRING, "", 4, false, false, HpccSrcType.UTF16LE, new FieldDef[0]);
@@ -694,11 +721,13 @@ public class DFSReadWriteTest extends BaseRemoteTest
             HPCCRecord readRecord = originalRecords.get(i);
             Assert.assertEquals(originalRecord, readRecord);
         }
+        System.out.println("Completed test: longStringTest");
     }
 
     @Test
     public void numericOverflowTest() throws Exception
     {
+        System.out.println("Starting test: numericOverflowTest");
         // Create a large record dataset
         FieldDef[] fieldDefs = new FieldDef[16];
         fieldDefs[0] = new FieldDef("int1", FieldType.INTEGER, "INTEGER1", 1, true, false, HpccSrcType.LITTLE_ENDIAN, new FieldDef[0]);
@@ -815,12 +844,14 @@ public class DFSReadWriteTest extends BaseRemoteTest
                 Assert.fail("Records did not match.");
             }
         }
+        System.out.println("Completed test: numericOverflowTest");
     }
 
     final static String dimdatefilename = "dfsclient::junit::dim_date";
     @Test
     public void filteredDIMDATEJAPI445Test() throws Exception
     {
+        System.out.println("Starting test: filteredDIMDATEJAPI445Test");
         List<HPCCRecord> records = new ArrayList<HPCCRecord>();
         FieldDef[] fieldDefs = new FieldDef[2];
         fieldDefs[0] = new FieldDef("date_sk", FieldType.INTEGER, "unsigned8", 8, true, false, HpccSrcType.LITTLE_ENDIAN, new FieldDef[0]);
@@ -908,11 +939,13 @@ public class DFSReadWriteTest extends BaseRemoteTest
         {
             Assert.fail("Date file filter was expected to return 1 record, records returned: " + records.size());
         }
+        System.out.println("Completed test: filteredDIMDATEJAPI445Test");
     }
 
     @Test
     public void filteredTest() throws Exception
     {
+        System.out.println("Starting test: filteredTest");
         // Create a large record dataset
         FieldDef[] fieldDefs = new FieldDef[2];
         fieldDefs[0] = new FieldDef("key", FieldType.INTEGER, "lNTEGER4", 4, true, false, HpccSrcType.LITTLE_ENDIAN, new FieldDef[0]);
@@ -938,11 +971,13 @@ public class DFSReadWriteTest extends BaseRemoteTest
         {
             Assert.fail("Failed to read filtered record dataset");
         }
+        System.out.println("Completed test: filteredTest");
     }
 
     @Test
     public void stringProcesingTests() throws Exception
     {
+        System.out.println("Starting test: stringProcesingTests");
         String whiteSpaceStr = " \t\n\r\f"
                              + '\u0009' + '\u000B' + '\u000C'
                              + '\u001C' + '\u001D' + '\u001E' + '\u001F';
@@ -1016,11 +1051,13 @@ public class DFSReadWriteTest extends BaseRemoteTest
                 assertEquals(records.get(0).getField(i), nonEmptyStrings[i]);
             }
         }
+        System.out.println("Completed test: stringProcesingTests");
     }
 
     @Test
     public void stringEOSTests() throws Exception
     {
+        System.out.println("Starting test: stringEOSTests");
         FieldDef[] fieldDefs = new FieldDef[9];
         fieldDefs[0] = new FieldDef("str1", FieldType.STRING, "UTF8", 4, false, false, HpccSrcType.UTF8, new FieldDef[0]);
         fieldDefs[1] = new FieldDef("str2", FieldType.STRING, "STRING", 4, false, false, HpccSrcType.SINGLE_BYTE_CHAR, new FieldDef[0]);
@@ -1060,11 +1097,13 @@ public class DFSReadWriteTest extends BaseRemoteTest
             String field = (String) records.get(0).getField(i);
             assertEquals(field.trim(), nonEmptyStrings[i].trim());
         }
+        System.out.println("Completed test: stringEOSTests");
     }
 
     @Test
     public void resumeFileReadTest() throws Exception
     {
+        System.out.println("Starting test: resumeFileReadTest");
         HPCCFile file = new HPCCFile("benchmark::integer::20kb", connString , hpccUser, hpccPass);
 
         DataPartition[] fileParts = file.getFileParts();
@@ -1183,11 +1222,13 @@ public class DFSReadWriteTest extends BaseRemoteTest
                 }
             }
         }
+        System.out.println("Completed test: resumeFileReadTest");
     }
 
     @Test
     public void protocolVersionTest()
     {
+        System.out.println("Starting test: protocolVersionTest");
         HPCCWsDFUClient dfuClient = wsclient.getWsDFUClient();
 
         HpccRemoteFileReader<HPCCRecord> fileReader = null;
@@ -1215,11 +1256,13 @@ public class DFSReadWriteTest extends BaseRemoteTest
         {
             assertFalse("Expected rowservice with version: " + remoteVersion.toString() + " to be using old protocol.", fileReader.getInputStream().isUsingNewProtocol());
         }
+        System.out.println("Completed test: protocolVersionTest");
     }
 
     @Ignore @Test
     public void emptyCompressedFileTest()
     {
+        System.out.println("Starting test: emptyCompressedFileTest");
         HPCCWsDFUClient dfuClient = wsclient.getWsDFUClient();
         Version remoteVersion = dfuClient.getTargetHPCCBuildVersion();
 
@@ -1247,11 +1290,13 @@ public class DFSReadWriteTest extends BaseRemoteTest
 
             Assert.fail("Expected an exception when the file was closed without having written any data with this version of the protocol.");
         }
+        System.out.println("Completed test: emptyCompressedFileTest");
     }
 
     @Test
     public void filePartReadRetryTest()
     {
+        System.out.println("Starting test: filePartReadRetryTest");
         {
             HPCCFile readFile = null;
             try
@@ -1294,12 +1339,13 @@ public class DFSReadWriteTest extends BaseRemoteTest
                 Assert.fail(e.getMessage());
             }
         }
+        System.out.println("Completed test: filePartReadRetryTest");
     }
 
     @Test
     public void invalidSignatureTest()
     {
-
+        System.out.println("Starting test: invalidSignatureTest");
         HPCCFile readFile = null;
         {
             Exception readException = null;
@@ -1374,11 +1420,13 @@ public class DFSReadWriteTest extends BaseRemoteTest
                 Assert.fail("Expected an exception during write due to the invalid signature");
             }
         }
+        System.out.println("Completed test: invalidSignatureTest");
     }
 
     @Test
     public void earlyCloseTest() throws Exception
     {
+        System.out.println("Starting test: earlyCloseTest");
         HPCCFile file = new HPCCFile(datasets[0], connString , hpccUser, hpccPass);
 
         DataPartition[] fileParts = file.getFileParts();
@@ -1445,6 +1493,7 @@ public class DFSReadWriteTest extends BaseRemoteTest
             }
             assertTrue("Expected record count: " + expectedRecordCounts + " Actual count: " + numRecords, numRecords == expectedRecordCounts);
         }
+        System.out.println("Completed test: earlyCloseTest");
     }
 
     public List<HPCCRecord> readFile(HPCCFile file, Integer connectTimeoutMillis, boolean shouldForceTimeout) throws Exception
@@ -1638,6 +1687,7 @@ public class DFSReadWriteTest extends BaseRemoteTest
     @Test
     public void readIndexTest() throws Exception
     {
+        System.out.println("Starting test: readIndexTest");
         String indexName = "test::index::child_dataset::key";
 
         HPCCFile file = new HPCCFile(indexName, connString, hpccUser, hpccPass);
@@ -1657,6 +1707,7 @@ public class DFSReadWriteTest extends BaseRemoteTest
         {
             Assert.fail("Unexpected record count. Expected: 125, Actual: " + numRecords);
         }
+        System.out.println("Completed test: readIndexTest");
     }
 
     private class LongKVData
