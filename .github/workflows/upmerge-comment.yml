@@ -2,7 +2,7 @@ name: Post Upmerge Test Results
 
 on:
   workflow_run:
-    workflows: ["upmerge-test"]
+    workflows: ["Upmerge Test"]
     types: [completed]
 
 permissions:

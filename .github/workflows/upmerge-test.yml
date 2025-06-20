@@ -1,4 +1,4 @@
-name: upmerge-test 
+name: Upmerge Test
 
 on:
   pull_request:
