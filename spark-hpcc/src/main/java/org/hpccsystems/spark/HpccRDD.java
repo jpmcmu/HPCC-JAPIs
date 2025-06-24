@@ -70,6 +70,7 @@ public class HpccRDD extends RDD<Row> implements Serializable
     private int                        connectionTimeout = DEFAULT_CONNECTION_TIMEOUT;
     private int                        recordLimit = -1;
     private double                     recordSamplingRate = HpccFile.MAX_RECORD_SAMPLING_RATE;
+    private long                       recordSamplingSeed = HpccFile.USE_RANDOM_SEED;
 
     private static void registerPicklingFunctions()
     {
@@ -141,6 +142,21 @@ public class HpccRDD extends RDD<Row> implements Serializable
     */
     public HpccRDD(SparkContext sc, DataPartition[] dataParts, FieldDef originalRD, FieldDef projectedRD, int connectTimeout, int limit, double recSamplingRate)
     {
+        this(sc, dataParts, originalRD, projectedRD, connectTimeout, limit, recSamplingRate, HpccFile.USE_RANDOM_SEED);
+    }
+
+    /**
+     * @param sc spark context
+     * @param dataParts data parts
+     * @param originalRD original record definition
+     * @param projectedRD projected record definition
+     * @param connectTimeout connection timeout
+     * @param limit file limit
+     * @param recSamplingRate record sampling rate
+     * @param recSamplingSeed record sampling seed
+    */
+    public HpccRDD(SparkContext sc, DataPartition[] dataParts, FieldDef originalRD, FieldDef projectedRD, int connectTimeout, int limit, double recSamplingRate, long recSamplingSeed)
+    {
         super(sc, new ArrayBuffer<Dependency<?>>(), CT_RECORD);
         this.parts = new InternalPartition[dataParts.length];
         for (int i = 0; i < dataParts.length; i++)
@@ -155,6 +171,7 @@ public class HpccRDD extends RDD<Row> implements Serializable
         this.connectionTimeout = connectTimeout;
         this.recordLimit = limit;
         this.recordSamplingRate = recSamplingRate;
+        this.recordSamplingSeed = recSamplingSeed;
     }
 
     /**
@@ -226,6 +243,7 @@ public class HpccRDD extends RDD<Row> implements Serializable
             context.recordReadLimit = recordLimit;
             context.parentSpan = sparkPartReadSpan;
             context.recordSamplingRate = recordSamplingRate;
+            context.recordSamplingSeed = recordSamplingSeed;
             final HpccRemoteFileReader<Row> fileReader = new HpccRemoteFileReader<Row>(context, this_part.partition, new GenericRowRecordBuilder(projectedRD));
 
             // This will be called for both failure & success

@@ -220,6 +220,7 @@ public class DataframeIntegrationTest extends BaseIntegrationTest
                                     .option("username", getHPCCClusterUser())
                                     .option("password", getHPCCClusterPass())
                                     .option("recordSamplingRate", 0.1) // 10% sampling rate
+                                    .option("recordSamplingSeed", 42) // Fixed seed for reproducibility
                                     .load(datasetPath);
         long count = readDataSet.count();
         long expectedCount = (long) (10000 * 0.1); // Expect around 1000 records

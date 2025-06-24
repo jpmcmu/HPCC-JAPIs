@@ -23,6 +23,7 @@ public class HpccOptions
     public int                  expirySeconds  = 120;
     public int                  filePartLimit  = -1;
     public double               recordSamplingRate   = HpccFile.MAX_RECORD_SAMPLING_RATE;
+    public long                 recordSamplingSeed   = HpccFile.USE_RANDOM_SEED;
     public boolean              useTLK         = false;
     public List<Integer>        fileParts      = new ArrayList<Integer>();
 
@@ -146,9 +147,9 @@ public class HpccOptions
             spanID = (String) parameters.get("spanid");
         }
 
-        if (parameters.containsKey("recordSamplingRate"))
+        if (parameters.containsKey("recordsamplingrate"))
         {
-            String recordSamplingRateStr = (String) parameters.get("recordSamplingRate");
+            String recordSamplingRateStr = (String) parameters.get("recordsamplingrate");
             try
             {
                 recordSamplingRate = Double.parseDouble(recordSamplingRateStr);
@@ -167,9 +168,26 @@ public class HpccOptions
             }
         }
 
-        if (parameters.containsKey("fileParts"))
+        if (parameters.containsKey("recordsamplingseed"))
         {
-            String filePartsStr = (String) parameters.get("fileParts");
+            String recordSamplingSeedStr = (String) parameters.get("recordsamplingseed");
+            try
+            {
+                recordSamplingSeed = Long.parseLong(recordSamplingSeedStr);
+                if (recordSamplingSeed < 0)
+                {
+                    recordSamplingSeed = HpccFile.USE_RANDOM_SEED;
+                }
+            }
+            catch (NumberFormatException e)
+            {
+                throw new Exception("Invalid sampling seed: " + recordSamplingSeedStr, e);
+            }
+        }
+
+        if (parameters.containsKey("fileparts"))
+        {
+            String filePartsStr = (String) parameters.get("fileparts");
             String[] filePartsStrArray = filePartsStr.split(",");
             for (String filePartStr : filePartsStrArray)
             {
