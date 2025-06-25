@@ -347,63 +347,77 @@ public class DFSReadWriteTest extends BaseRemoteTest
             Assert.fail("Invalid or null record definition");
         }
 
-        ArrayList<HpccRemoteFileReader.FileReadResumeInfo> resumeInfo = new ArrayList<HpccRemoteFileReader.FileReadResumeInfo>();
-        ArrayList<Integer> resumeFilePart = new ArrayList<Integer>();
         ArrayList<HPCCRecord> records = new ArrayList<HPCCRecord>();
-        for (int i = 0; i < fileParts.length; i++)
-        {
-            HPCCRecordBuilder recordBuilder = new HPCCRecordBuilder(file.getProjectedRecordDefinition());
-            HpccRemoteFileReader<HPCCRecord> fileReader = new HpccRemoteFileReader<HPCCRecord>(fileParts[i], originalRD, recordBuilder);
-
-            while (fileReader.hasNext())
-            {
-                resumeInfo.add(fileReader.getFileReadResumeInfo());
-                resumeFilePart.add(i);
-                HPCCRecord record = fileReader.next();
-
-                if (record == null)
-                {
-                    Assert.fail("Received null record during read");
-                }
-
-                records.add(record);
-            }
-            fileReader.close();
-
-            if (fileReader.getRemoteReadMessageCount() > 0)
-                System.out.println("Messages from file part (" + i + ") read operation:\n" + fileReader.getRemoteReadMessages());
-        }
-
-        Runtime runtime = Runtime.getRuntime();
-        int readSizeKB = 100;
         ArrayList<HPCCRecord> resumedRecords = new ArrayList<HPCCRecord>();
-        for (int i = 0; i < resumeInfo.size(); i++)
+        try
         {
-            HPCCRecordBuilder recordBuilder = new HPCCRecordBuilder(file.getProjectedRecordDefinition());
-            HpccRemoteFileReader<HPCCRecord> fileReader = new HpccRemoteFileReader<HPCCRecord>(
-                    fileParts[resumeFilePart.get(i)], originalRD, recordBuilder, 1000000, -1, true, readSizeKB, resumeInfo.get(i));
+            ArrayList<HpccRemoteFileReader.FileReadResumeInfo> resumeInfo = new ArrayList<HpccRemoteFileReader.FileReadResumeInfo>();
+            ArrayList<Integer> resumeFilePart = new ArrayList<Integer>();
 
-            if (fileReader.hasNext())
+            for (int i = 0; i < fileParts.length; i++)
             {
-                HPCCRecord record = fileReader.next();
-                if (record == null)
+                HPCCRecordBuilder recordBuilder = new HPCCRecordBuilder(file.getProjectedRecordDefinition());
+                HpccRemoteFileReader<HPCCRecord> fileReader = new HpccRemoteFileReader<HPCCRecord>(fileParts[i], originalRD, recordBuilder);
+
+                while (fileReader.hasNext())
                 {
-                    Assert.fail("Received null record during resumed read");
+                    resumeInfo.add(fileReader.getFileReadResumeInfo());
+                    resumeFilePart.add(i);
+                    HPCCRecord record = fileReader.next();
+
+                    if (record == null)
+                    {
+                        Assert.fail("Received null record during read");
+                    }
+
+                    records.add(record);
+                }
+                fileReader.close();
+
+                if (fileReader.getRemoteReadMessageCount() > 0)
+                    System.out.println("Messages from file part (" + i + ") read operation:\n" + fileReader.getRemoteReadMessages());
+            }
+
+            Runtime runtime = Runtime.getRuntime();
+            int readSizeKB = 100;
+            for (int i = 0; i < resumeInfo.size(); i++)
+            {
+                HPCCRecordBuilder recordBuilder = new HPCCRecordBuilder(file.getProjectedRecordDefinition());
+                HpccRemoteFileReader<HPCCRecord> fileReader = new HpccRemoteFileReader<HPCCRecord>(
+                        fileParts[resumeFilePart.get(i)], originalRD, recordBuilder, 1000000, -1, true, readSizeKB, resumeInfo.get(i));
+
+                if (fileReader.hasNext())
+                {
+                    HPCCRecord record = fileReader.next();
+                    if (record == null)
+                    {
+                        Assert.fail("Received null record during resumed read");
+                    }
+
+                    resumedRecords.add(record);
                 }
 
-                resumedRecords.add(record);
-            }
+                // Periodically run garbage collector to prevent buffers in remote file readers from exhausting free memory
+                // This is only needed due to rapidly creating / destroying thousands of HpccRemoteFileReaders
+                if ((i % 10) == 0)
+                {
+                    runtime.gc();
+                }
+                fileReader.close();
 
-            // Periodically run garbage collector to prevent buffers in remote file readers from exhausting free memory
-            // This is only needed due to rapidly creating / destroying thousands of HpccRemoteFileReaders
-            if ((i % 10) == 0)
-            {
-                runtime.gc();
+                fileReader = null;
+                recordBuilder = null;
             }
-            fileReader.close();
+        }
+        catch (Exception e)
+        {
+            // Write fileParts[0].fileAccessBlob to a local file part
+            Path filePartPath = Paths.get("filePartBlob.txt");
+            Files.write(filePartPath, fileParts[0].getFileAccessBlob().getBytes());
+            System.out.println("File part access blob written to: " + filePartPath.toAbsolutePath());
 
-            fileReader = null;
-            recordBuilder = null;
+            e.printStackTrace();
+            Assert.fail("Exception during read resume test: " + e.getMessage());
         }
 
         assertEquals("Number of records did not match during read resume.", records.size(), resumedRecords.size());
