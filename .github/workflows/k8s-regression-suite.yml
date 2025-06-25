@@ -193,3 +193,32 @@ jobs:
 
         if hadErrors:
           sys.exit(1)
+          
+    - name: Extract Certificates and Collect Files
+      if: always()
+      run: |
+        echo "Extracting certificates from Kubernetes secret..."
+        kubectl get secret hpcc-signing-issuer-key-pair -o jsonpath='{.data.tls\.crt}' | base64 -d > extracted.crt
+        kubectl get secret hpcc-signing-issuer-key-pair -o jsonpath='{.data.tls\.key}' | base64 -d > extracted.key
+        
+        echo "Checking for filePartBlob.txt and other relevant files..."
+        find . -name "filePartBlob.txt" -type f -exec echo "Found blob file: {}" \;
+        find . -name "*.csv" -path "*/FailedTests.csv" -exec echo "Found failed test file: {}" \;
+        
+        echo "Certificate files created:"
+        ls -la extracted.crt extracted.key
+        
+        echo "Certificate info:"
+        openssl x509 -in extracted.crt -text -noout | head -20
+
+    - name: Upload Blob & Key
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: upload-blob-key-${{ github.run_number }}
+        path: |
+          extracted.crt
+          extracted.key
+          **/filePartBlob.txt
+          **/FailedTests.csv
+        retention-days: 30
