@@ -5,6 +5,11 @@ on:
     workflows: ["Upmerge Test"]
     types: [completed]
 
+permissions:
+  actions: read
+  contents: read
+  pull-requests: write
+
 jobs:
   post-comment:
     runs-on: ubuntu-latest
