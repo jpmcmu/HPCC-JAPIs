@@ -41,8 +41,8 @@ jobs:
           const branchMatch = body.match(/branch:\s*([^\n]+)/);
           if (branchMatch) branch = branchMatch[1].trim();
 
-          const hasCustomPlatform = repository && branch;
-          
+          const hasCustomPlatform = repository != "" && branch != "";
+
           if (!hasCustomPlatform) {
             console.log(`No custom repository/branch specified. Using default platform.`);
           } else {
