@@ -96,11 +96,10 @@ jobs:
       with:
         ref: ${{ github.event.pull_request.head.sha }}
         fetch-depth: 0
-    - name: Rebase
+    - name: Set up Git
       run: |
         git config user.email 'hpccsystems@lexisnexisrisk.com'
         git config user.name 'hpccsystems development'
-        git rebase origin/${{ github.event.pull_request.base.ref }}
         git log --pretty=one -n 15
 
     - name: Build HPCC Docker Image
