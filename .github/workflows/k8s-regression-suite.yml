@@ -53,6 +53,7 @@ jobs:
           core.setOutput("repository", repository);
           core.setOutput("branch", branch);
           core.setOutput("has-custom-platform", hasCustomPlatform);
+          console.log(`Repository: ${repository} Branch: ${branch} Has Custom Platform: ${hasCustomPlatform}`);
 
   build-docker:
     name: build-docker-ubuntu-22.04
