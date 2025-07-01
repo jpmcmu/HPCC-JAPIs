@@ -3,6 +3,21 @@ name: Build Package (Docker)
 on:
   workflow_call:
     inputs:
+      should-build:
+        type: boolean
+        description: 'Should the build be executed'
+        required: false
+        default: true
+      repository:
+        type: string
+        description: 'Repository to checkout (if not HPCC-Platform)'
+        required: false
+        default: 'HPCC-Platform'
+      branch:
+        type: string
+        description: 'Branch to checkout (if not base branch)'
+        required: false
+        default: ''
       os:
         type: string
         description: 'Operating System'
@@ -73,6 +88,7 @@ jobs:
     runs-on: ubuntu-22.04${{ inputs.tag_postfix }}
     steps:
       - name: Free additional disk space (remove Android SDK + Tools)
+        if: ${{ inputs.should-build }}
         continue-on-error: true
         run: |
           df -h
@@ -87,17 +103,29 @@ jobs:
           sudo rm -rf ${SELENIUM_JAR_PATH}
 
       - name: Display disk space (post free)
+        if: ${{ inputs.should-build }}
         run: |
           df -h
 
       - name: Checkout HPCC-Platform
+        if: ${{ (inputs.repository == '' || inputs.branch == '') && inputs.should-build == true }}
         uses: actions/checkout@v4
         with:
           submodules: recursive
           path: ${{ github.workspace }}/HPCC-Platform
 
+      - name: Checkout HPCC-Platform
+        if: ${{ inputs.repository != '' || inputs.branch != '' && inputs.should-build == true }}
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          path: ${{ github.workspace }}/HPCC-Platform
+          repository: ${{ inputs.repository }}
+          ref: ${{ inputs.branch }}
+
+
       - name: Checkout LN
-        if: ${{ inputs.ln == true }}
+        if: ${{ inputs.ln == true && inputs.should-build == true }}
         uses: actions/checkout@v4
         with:
           repository: ${{ github.repository_owner }}/LN
@@ -107,6 +135,7 @@ jobs:
           path: ${{ github.workspace }}/LN
 
       - name: Calculate vars
+        if: ${{ inputs.should-build }}
         id: vars
         working-directory: ${{ github.workspace }}/HPCC-Platform/vcpkg
         shell: "bash"
@@ -122,20 +151,24 @@ jobs:
           echo "docker_tag_candidate_base=$docker_build_label:$branch_label${{ inputs.tag_postfix }}" >> $GITHUB_OUTPUT
 
       - name: Print vars
+        if: ${{ inputs.should-build }}
         shell: "bash"
         run: |
           echo "${{ toJSON(steps.vars.outputs) }}"
 
       - name: Set up Docker Buildx
+        if: ${{ inputs.should-build }}
         id: buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Pull Build Image
+        if: ${{ inputs.should-build }}
         run: |
           docker pull ${{ steps.vars.outputs.docker_tag }} || true
           docker pull ${{ steps.vars.outputs.docker_tag_candidate_base }} || true
 
       - uses: hendrikmuhs/ccache-action@v1.2
+        if: ${{ inputs.should-build }}
         with:
           save: ${{ inputs.update-cache == true }}
           key: docker${{ inputs.tag_postfix }}-${{ inputs.os }}-${{ inputs.build-type }}-${{ steps.vars.outputs.branch_label }}-${{ inputs.containerized == true && 'k8s' || 'bare-metal' }}-${{ inputs.ln == true && 'LN' || 'HPCC-Platform' }}
@@ -146,6 +179,7 @@ jobs:
             docker${{ inputs.tag_postfix }}-${{ inputs.os }}-
 
       - name: Docker build image
+        if: ${{ inputs.should-build }}
         uses: docker/build-push-action@v5
         with:
           builder: ${{ steps.buildx.outputs.name }}
@@ -163,6 +197,7 @@ jobs:
             type=registry,ref=${{ steps.vars.outputs.docker_tag_candidate_base }}
 
       - name: CMake Configure and Build
+        if: ${{ inputs.should-build }}
         shell: "bash"
         run: |
           mkdir -p ${{ github.workspace }}/LN
@@ -184,7 +219,7 @@ jobs:
           done
 
       - name: Upload Package
-        if: ${{ inputs.upload-package == true }}
+        if: ${{ inputs.upload-package == true && inputs.should-build == true }}
         uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.asset-name }}
@@ -194,7 +229,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload Support Files
-        if: ${{ inputs.upload-package == true }}
+        if: ${{ inputs.upload-package == true && inputs.should-build == true }}
         uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.asset-name }}-support-files
@@ -204,7 +239,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload ECL Watch UI Test Files
-        if: ${{ inputs.upload-package == true }}
+        if: ${{ inputs.upload-package == true && inputs.should-build == true }}
         uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.asset-name }}-ecl_watch_ui_tests
