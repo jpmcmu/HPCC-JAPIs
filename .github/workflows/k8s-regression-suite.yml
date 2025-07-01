@@ -30,7 +30,7 @@ jobs:
           }
 
           const body = context.payload.pull_request?.body || "";
-          print(`PR body: ${body}`);
+          console.log(`PR body: ${body}`);
 
           let repository = "";
           let branch = "";
