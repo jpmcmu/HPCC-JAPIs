@@ -110,7 +110,7 @@ jobs:
         platform-folder: ./HPCC-Platform
 
     - name: Deploy HPCC on K8s
-      uses: .github/actions/deploy-hpcc-k8s
+      uses: ./.github/actions/deploy-hpcc-k8s
       with:
         use-local-image: ${{ needs.parse-pr-body.outputs.has-custom-platform == 'true' }}
         platform-folder: ./HPCC-Platform
