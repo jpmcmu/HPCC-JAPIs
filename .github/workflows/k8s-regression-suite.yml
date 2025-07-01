@@ -30,12 +30,14 @@ jobs:
           }
 
           const body = context.payload.pull_request?.body || "";
+          print(`PR body: ${body}`);
+
           let repository = "";
           let branch = "";
 
           for (const line of body.split('\n')) {
-            const repoMatch = line.match(/^repository:\s*(.+)$/);
-            const branchMatch = line.match(/^branch:\s*(.+)$/);
+            const repoMatch = line.match(/^\s*repository:\s*(.+)$/);
+            const branchMatch = line.match(/^\s*branch:\s*(.+)$/);
             if (repoMatch) repository = repoMatch[1].trim();
             if (branchMatch) branch = branchMatch[1].trim();
           }
