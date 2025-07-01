@@ -51,24 +51,20 @@ jobs:
           core.setOutput("repository", repository);
           core.setOutput("branch", branch);
           core.setOutput("has-custom-platform", hasCustomPlatform);
+
   build-docker:
     name: build-docker-ubuntu-22.04
     needs: parse-pr-body
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        
-      - name: Call Build Docker Workflow
-        uses: ./.github/workflows/build-docker.yml
-        with:
-          os: ubuntu-22.04
-          should-build: ${{ needs.parse-pr-body.outputs.has-custom-platform == 'true' }}
-          repository: ${{ needs.parse-pr-body.outputs.repository }}
-          branch: ${{ needs.parse-pr-body.outputs.branch }}
-          upload-package: true
-          containerized: true
-          asset-name: docker-ubuntu-22_04-containerized
+    uses: ./.github/workflows/build-docker.yml
+    with:
+      os: ubuntu-22.04
+      should-build: ${{ needs.parse-pr-body.outputs.has-custom-platform == 'true' }}
+      repository: ${{ needs.parse-pr-body.outputs.repository }}
+      branch: ${{ needs.parse-pr-body.outputs.branch }}
+      upload-package: true
+      containerized: true
+      asset-name: docker-ubuntu-22_04-containerized
+    secrets: inherit
 
   test-against-platform:
     runs-on: ubuntu-latest
