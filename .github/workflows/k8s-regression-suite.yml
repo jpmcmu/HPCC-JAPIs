@@ -35,25 +35,23 @@ jobs:
           let repository = "";
           let branch = "";
 
-          for (const line of body.split('\n')) {
-            const repoMatch = line.match(/^\s*repository:\s*(.+)$/);
-            const branchMatch = line.match(/^\s*branch:\s*(.+)$/);
-            if (repoMatch) repository = repoMatch[1].trim();
-            if (branchMatch) branch = branchMatch[1].trim();
-          }
+          const repoMatch = body.match(/repository:\s*([^\n]+)/);
+          if (repoMatch) repository = repoMatch[1].trim();
+
+          const branchMatch = body.match(/branch:\s*([^\n]+)/);
+          if (branchMatch) branch = branchMatch[1].trim();
 
           const hasCustomPlatform = repository && branch;
           
           if (!hasCustomPlatform) {
-            core.info(`No custom repository/branch specified. Using default platform.`);
+            console.log(`No custom repository/branch specified. Using default platform.`);
           } else {
-            core.info(`Custom platform found: ${repository}@${branch}`);
+            console.log(`Custom platform found: ${repository}@${branch}`);
           }
 
           core.setOutput("repository", repository);
           core.setOutput("branch", branch);
           core.setOutput("has-custom-platform", hasCustomPlatform);
-          console.log(`Repository: ${repository} Branch: ${branch} Has Custom Platform: ${hasCustomPlatform}`);
 
   build-docker:
     name: build-docker-ubuntu-22.04
