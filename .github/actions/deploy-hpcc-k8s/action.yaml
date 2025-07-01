@@ -83,9 +83,9 @@ runs:
         if [ "${{ inputs.use-local-image }}" == "true" ]; then
           sudo microk8s helm install myhpcc ${{ inputs.platform-folder }}/helm/hpcc --set global.image.root=localhost:32000/hpccsystems --set global.image.version=latest -f values.yaml
         else
-          helm repo add hpcc https://hpcc-systems.github.io/helm-chart
-          helm repo update
-          helm install myhpcc hpcc/hpcc -f values.yaml
+          sudo microk8s helm repo add hpcc https://hpcc-systems.github.io/helm-chart
+          sudo microk8s helm repo update
+          sudo microk8s helm install myhpcc hpcc/hpcc -f values.yaml
         fi
       shell: bash
 
