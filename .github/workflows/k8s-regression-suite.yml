@@ -84,6 +84,11 @@ jobs:
         devMode: 'true'
         addons: '["dns", "rbac", "hostpath-storage", "registry"]'
 
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.pull_request.head.sha }}
+        fetch-depth: 0
+
     - name: Checkout HPCC-Platform
       if: ${{ needs.parse-pr-body.outputs.has-custom-platform == 'true' }}
       uses: actions/checkout@v4
@@ -93,10 +98,6 @@ jobs:
         repository: ${{ needs.parse-pr-body.outputs.repository }}
         ref: ${{ needs.parse-pr-body.outputs.branch }}
 
-    - uses: actions/checkout@v4
-      with:
-        ref: ${{ github.event.pull_request.head.sha }}
-        fetch-depth: 0
     - name: Set up Git
       run: |
         git config user.email 'hpccsystems@lexisnexisrisk.com'
