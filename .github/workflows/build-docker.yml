@@ -130,7 +130,7 @@ jobs:
         with:
           repository: ${{ github.repository_owner }}/LN
           token: ${{ secrets.LNB_TOKEN }}
-          ref: ${{ github.base_ref }}
+          ref: ${{ inputs.branch }} 
           submodules: recursive
           path: ${{ github.workspace }}/LN
 
@@ -140,7 +140,7 @@ jobs:
         working-directory: ${{ github.workspace }}/HPCC-Platform/vcpkg
         shell: "bash"
         run: |
-          branch_label_1=${{ github.base_ref }}
+          branch_label_1=${{ inputs.branch }}
           branch_label_2=$(echo ${{ github.ref }} | cut -d'/' -f3)
           branch_label=${branch_label_1:-$branch_label_2}
           echo "branch_label=$branch_label" >> $GITHUB_OUTPUT
