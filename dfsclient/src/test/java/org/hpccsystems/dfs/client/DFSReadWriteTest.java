@@ -73,7 +73,6 @@ public class DFSReadWriteTest extends BaseRemoteTest
     private static final Version newProtocolVersion = new Version(8,12,10);
 
 
-    @Test
     public void readBadlyDistributedFileTest() throws Exception
     {
         //this file only has data on two nodes
@@ -83,7 +82,6 @@ public class DFSReadWriteTest extends BaseRemoteTest
         assertEquals("Not all records loaded",expectedCounts[1], records.size());
     }
 
-    @Test
     public void readWithForcedTimeoutTest() throws Exception
     {
         HPCCFile file = new HPCCFile(datasets[0], connString , hpccUser, hpccPass);
@@ -93,7 +91,6 @@ public class DFSReadWriteTest extends BaseRemoteTest
         assertEquals("Not all records loaded",expectedCounts[0], records.size());
     }
 
-    @Test
     public void nullCharTests() throws Exception
     {
         // Unicode
@@ -209,7 +206,6 @@ public class DFSReadWriteTest extends BaseRemoteTest
         assertTrue("Single byte EOS character test failed. See mismatches above.", sbcPassed);
     }
 
-    @Test
     public void longNullTerminatedStringTest() throws Exception
     {
         Object[] fields = new Object[1];
@@ -235,7 +231,6 @@ public class DFSReadWriteTest extends BaseRemoteTest
         assertEquals(record, readRecord);
     }
 
-    @Test
     public void integrationReadWriteBackTest() throws Exception
     {
         for (int i = 0; i < datasets.length; i++)
@@ -282,7 +277,6 @@ public class DFSReadWriteTest extends BaseRemoteTest
         }
     }
 
-    @Test
     public void readBufferResizeTest() throws Exception
     {
         HPCCFile file = new HPCCFile(datasets[0], connString , hpccUser, hpccPass);
@@ -472,7 +466,6 @@ public class DFSReadWriteTest extends BaseRemoteTest
         }
     }
 
-    @Test
     public void nullElementTests()
     {
         FieldDef[] stringSetElemFD = new FieldDef[1];
@@ -537,7 +530,6 @@ public class DFSReadWriteTest extends BaseRemoteTest
         writeFile(records, "null::element::test", recordDef, connTO);
     }
 
-    @Test
     public void getMetadataTest() throws Exception
     {
         String fname = datasets[0];
@@ -548,7 +540,6 @@ public class DFSReadWriteTest extends BaseRemoteTest
         assertEquals(expectedCounts[0],Long.valueOf(meta.getRecordCountInt64()).intValue());
     }
 
-    @Test
     public void getNullMetadataTest() throws Exception
     {
         HPCCFile file=new HPCCFile("notthere",connString,hpccUser,hpccPass);
@@ -575,7 +566,6 @@ public class DFSReadWriteTest extends BaseRemoteTest
         return sb.toString();
     }
 
-    @Test
     public void integrationLargeRecordTest() throws Exception
     {
         // Create a large record dataset
@@ -615,7 +605,6 @@ public class DFSReadWriteTest extends BaseRemoteTest
         }
     }
 
-    @Test
     public void unsigned8ToDecimalTest() throws Exception
     {
         // Create a large record dataset
@@ -655,7 +644,6 @@ public class DFSReadWriteTest extends BaseRemoteTest
         }
     }
 
-    @Test
     public void longStringTest() throws Exception
     {
         // Create a large record dataset
@@ -696,7 +684,6 @@ public class DFSReadWriteTest extends BaseRemoteTest
         }
     }
 
-    @Test
     public void numericOverflowTest() throws Exception
     {
         // Create a large record dataset
@@ -818,7 +805,6 @@ public class DFSReadWriteTest extends BaseRemoteTest
     }
 
     final static String dimdatefilename = "dfsclient::junit::dim_date";
-    @Test
     public void filteredDIMDATEJAPI445Test() throws Exception
     {
         List<HPCCRecord> records = new ArrayList<HPCCRecord>();
@@ -910,7 +896,6 @@ public class DFSReadWriteTest extends BaseRemoteTest
         }
     }
 
-    @Test
     public void filteredTest() throws Exception
     {
         // Create a large record dataset
@@ -940,7 +925,6 @@ public class DFSReadWriteTest extends BaseRemoteTest
         }
     }
 
-    @Test
     public void stringProcesingTests() throws Exception
     {
         String whiteSpaceStr = " \t\n\r\f"
@@ -1018,7 +1002,6 @@ public class DFSReadWriteTest extends BaseRemoteTest
         }
     }
 
-    @Test
     public void stringEOSTests() throws Exception
     {
         FieldDef[] fieldDefs = new FieldDef[9];
@@ -1062,7 +1045,6 @@ public class DFSReadWriteTest extends BaseRemoteTest
         }
     }
 
-    @Test
     public void resumeFileReadTest() throws Exception
     {
         HPCCFile file = new HPCCFile("benchmark::integer::20kb", connString , hpccUser, hpccPass);
@@ -1185,7 +1167,6 @@ public class DFSReadWriteTest extends BaseRemoteTest
         }
     }
 
-    @Test
     public void protocolVersionTest()
     {
         HPCCWsDFUClient dfuClient = wsclient.getWsDFUClient();
@@ -1249,7 +1230,6 @@ public class DFSReadWriteTest extends BaseRemoteTest
         }
     }
 
-    @Test
     public void filePartReadRetryTest()
     {
         {
@@ -1296,7 +1276,6 @@ public class DFSReadWriteTest extends BaseRemoteTest
         }
     }
 
-    @Test
     public void invalidSignatureTest()
     {
 
@@ -1376,7 +1355,6 @@ public class DFSReadWriteTest extends BaseRemoteTest
         }
     }
 
-    @Test
     public void earlyCloseTest() throws Exception
     {
         HPCCFile file = new HPCCFile(datasets[0], connString , hpccUser, hpccPass);
