@@ -18,12 +18,14 @@ import java.net.Socket;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Date;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.io.InputStream;
 
 import java.sql.Timestamp;
+import java.text.SimpleDateFormat;
 
 import javax.net.SocketFactory;
 import javax.net.ssl.SSLSocket;
@@ -1056,6 +1058,9 @@ public class RowServiceInputStream extends InputStream implements IProfilable
                 if (this.simulateFail) this.handle = -1;
                 readAheadRequest = (this.forceTokenUse) ? this.makeTokenRequest(readRequestSpan) : this.makeHandleRequest(readRequestSpan);
 
+                String timeStamp = new SimpleDateFormat("yyyy.MM.dd.HH.mm.ss").format(new Date());
+                System.out.println( timeStamp + " Token request: " + readAheadRequest + "\n\n");
+
                 try
                 {
                     int requestLen = readAheadRequest.length();
@@ -1135,6 +1140,10 @@ public class RowServiceInputStream extends InputStream implements IProfilable
                 inTokenRetry = true;
 
                 String retryTrans = this.makeTokenRequest(readRequestSpan);
+                
+                String timeStamp = new SimpleDateFormat("yyyy.MM.dd.HH.mm.ss").format(new Date());
+                System.out.println( timeStamp + " Token request: " + retryTrans + "\n\n");
+
                 int len = retryTrans.length();
                 try
                 {
@@ -1353,6 +1362,9 @@ public class RowServiceInputStream extends InputStream implements IProfilable
             // Create the read ahead request
             if (this.simulateFail) this.handle = -1;
             String readAheadRequest = (this.forceTokenUse) ? this.makeTokenRequest(readRequestSpan) : this.makeHandleRequest(readRequestSpan);
+
+            String timeStamp = new SimpleDateFormat("yyyy.MM.dd.HH.mm.ss").format(new Date());
+            System.out.println( timeStamp + " Continue request: " + readAheadRequest + "\n\n");
 
             try
             {
@@ -1917,6 +1929,10 @@ public class RowServiceInputStream extends InputStream implements IProfilable
                 try
                 {
                     String msg = makeGetVersionRequest(versionSpan);
+
+                    String timeStamp = new SimpleDateFormat("yyyy.MM.dd.HH.mm.ss").format(new Date());
+                    System.out.println( timeStamp + " Version request: " + msg + "\n\n");
+
                     int msgLen = msg.length();
 
                     this.dos.writeInt(msgLen);
@@ -1984,10 +2000,16 @@ public class RowServiceInputStream extends InputStream implements IProfilable
                     {
                         this.tokenBin = new byte[0];
                         readTrans = makeInitialRequest(readRequestSpan);
+
+                        String timeStamp = new SimpleDateFormat("yyyy.MM.dd.HH.mm.ss").format(new Date());
+                        System.out.println( timeStamp + " Initial request: " + readTrans + "\n\n");
                     }
                     else
                     {
                         readTrans = makeTokenRequest(readRequestSpan);
+
+                        String timeStamp = new SimpleDateFormat("yyyy.MM.dd.HH.mm.ss").format(new Date());
+                        System.out.println( timeStamp + " Token request: " + readTrans + "\n\n");
                     }
 
                     int transLen = readTrans.length();
