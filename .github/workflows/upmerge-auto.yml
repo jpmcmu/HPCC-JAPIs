@@ -10,6 +10,10 @@ jobs:
     runs-on: ubuntu-latest
     # Only run if the upmerge test completed successfully
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: read
     steps:
       - name: "Debug Vars"
         env:
@@ -63,6 +67,7 @@ jobs:
           WORKFLOW_RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           WORKFLOW_RUN_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
           WORKFLOW_RUN_PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+          DRY_RUN: ${{ vars.AUTO_UPMERGE_DRY_RUN || 'false' }}
         shell: python
         run: |
           import os
@@ -217,8 +222,11 @@ jobs:
                   print(f'Error loading results file: {e}')
                   return None
 
-          def performUpmerge(sourceBranch, targetBranch, targetVersion, pr_info):
-              print(f"\n=== Performing upmerge from {sourceBranch} to {targetBranch} ===")
+          def performUpmerge(sourceBranch, targetBranch, targetVersion, pr_info, dry_run=False):
+              print(f"\n=== {'DRY RUN: ' if dry_run else ''}Performing upmerge from {sourceBranch} to {targetBranch} ===")
+              
+              if dry_run:
+                  print("DRY RUN MODE: No actual changes will be made")
               
               try:
                   # Checkout target branch
@@ -246,7 +254,7 @@ jobs:
                   source_sha = os.environ.get('WORKFLOW_RUN_HEAD_SHA')
                   print(f"Merging changes from {source_sha}")
                   merge_result = subprocess.run(
-                      ["git", "merge", source_sha, "--no-edit", "-m", f"Auto upmerge from {sourceBranch} to {targetBranch} (PR #{pr_info['number']})"],
+                      ["git", "merge", source_sha, "--no-edit", "-m", f"Auto upmerge from {sourceBranch} to {targetBranch} (PR #{pr_info.get('number')})"],
                       capture_output=True, text=True
                   )
                   if merge_result.returncode != 0:
@@ -280,6 +288,10 @@ jobs:
                           print(f"Git commit failed: {commit_result.stderr}")
                           return False
                   
+                  if dry_run:
+                      print("DRY RUN: Would push branch and create PR, but skipping actual execution")
+                      return True
+                  
                   # Push the upmerge branch
                   print(f"Pushing upmerge branch: {upmerge_branch}")
                   push_result = subprocess.run(
@@ -292,17 +304,13 @@ jobs:
                   
                   # Create a pull request for the upmerge
                   print(f"Creating PR for upmerge to {targetBranch}")
-                  pr_title = f"Auto upmerge from {sourceBranch} to {targetBranch} (Original PR #{pr_info['number']})"
-                  pr_body = f"""This is an automatic upmerge from {sourceBranch} to {targetBranch}.
-
-Original PR: #{pr_info['number']} - {pr_info['title']}
-Original Author: @{pr_info['author']}
-
-Changes:
-- Merged changes from {sourceBranch} 
-- Updated version to {targetVersion}
-
-This PR was automatically created by the auto-upmerge workflow."""
+                  pr_title = f"Auto upmerge from {sourceBranch} to {targetBranch} (Original PR #{pr_info.get('number')})"
+                  pr_body = f"This is an automatic upmerge from {sourceBranch} to {targetBranch}.\n\n"
+                  pr_body += f"Original PR: #{pr_info.get('number')} - {pr_info.get('title')}\n"
+                  pr_body += f"Original Author: {pr_info.get('author')}\n\n"
+                  pr_body += f"Changes:\n- Merged changes from {sourceBranch}\n"
+                  pr_body += f"- Updated version to {targetVersion}\n\n"
+                  pr_body += "This PR was automatically created by the auto-upmerge workflow."
                   
                   # Use GitHub API to create the PR
                   import json as json_mod
@@ -344,6 +352,10 @@ This PR was automatically created by the auto-upmerge workflow."""
 
           # Main execution
           workflow_run_pr_number = os.environ.get('WORKFLOW_RUN_PR_NUMBER')
+          dry_run = os.environ.get('DRY_RUN', 'false').lower() == 'true'
+          
+          if dry_run:
+              print("🧪 DRY RUN MODE ENABLED - No actual changes will be made")
           
           if not workflow_run_pr_number:
               print("No PR number found in workflow run")
@@ -399,7 +411,7 @@ This PR was automatically created by the auto-upmerge workflow."""
                       "version": targetVersion
                   })
                   
-                  success = performUpmerge(base_branch, targetBranch, targetVersion, pr_info)
+                  success = performUpmerge(base_branch, targetBranch, targetVersion, pr_info, dry_run)
                   
                   if success:
                       upmerge_results["successful_upmerges"].append(targetBranch)
