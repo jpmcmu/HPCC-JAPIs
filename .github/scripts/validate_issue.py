@@ -2,17 +2,142 @@
 """
 GitHub Issue Validation Agent
 Validates incoming issues for completeness, duplicates, and documentation coverage.
+
+Usage:
+    # Production mode (requires GitHub environment variables):
+    python validate_issue.py
+
+    # Local test mode (no GitHub access required):
+    python validate_issue.py --local --issue-file test_issue.json
+
+    # Local test mode with inline issue data:
+    python validate_issue.py --local --issue-number 123 --issue-title "Test Issue" \
+        --issue-body "This is a test issue body" --issue-author "testuser"
+
+Test issue JSON file format:
+{
+    "number": 123,
+    "title": "Issue title",
+    "body": "Issue description",
+    "author": "username",
+    "repository": "owner/repo",
+    "historical_issues": [
+        {"number": 1, "title": "Old issue", "body": "...", "state": "closed", "labels": []}
+    ]
+}
 """
 
 import os
+import sys
 import json
+import argparse
 import subprocess
 import tempfile
 from pathlib import Path
-from github import Github
+
+# GitHub library is optional for local testing
+try:
+    from github import Github
+    GITHUB_AVAILABLE = True
+except ImportError:
+    GITHUB_AVAILABLE = False
+
+
+class MockIssue:
+    """Mock issue object for local testing."""
+    def __init__(self, number, title, body, author):
+        self.number = number
+        self.title = title
+        self.body = body
+        self.author = author
+        self.labels = []
+        self.comments = []
+
+    def create_comment(self, comment):
+        self.comments.append(comment)
+        print(f"\n{'='*60}")
+        print("MOCK COMMENT POSTED:")
+        print('='*60)
+        print(comment)
+        print('='*60 + "\n")
+
+    def add_to_labels(self, label):
+        self.labels.append(label)
+        print(f"MOCK LABEL ADDED: {label}")
+
+
+class MockRepo:
+    """Mock repository object for local testing."""
+    def __init__(self, historical_issues=None):
+        self.historical_issues = historical_issues or []
+
+    def get_issues(self, state='all', sort='updated', direction='desc'):
+        """Return mock historical issues."""
+        return MockIssueIterator(self.historical_issues)
+
+
+class MockIssueIterator:
+    """Iterator that supports slicing for mock issues."""
+    def __init__(self, issues):
+        self.issues = issues
+
+    def __getitem__(self, key):
+        if isinstance(key, slice):
+            return self.issues[key]
+        return self.issues[key]
+
+    def __iter__(self):
+        return iter(self.issues)
+
+
+class MockHistoricalIssue:
+    """Mock historical issue for duplicate checking."""
+    def __init__(self, data):
+        self.number = data.get('number', 0)
+        self.title = data.get('title', '')
+        self.body = data.get('body', '')
+        self.state = data.get('state', 'open')
+        self.labels = [MockLabel(name) for name in data.get('labels', [])]
+        self.created_at = MockDateTime(data.get('created_at', '2024-01-01T00:00:00'))
+
+
+class MockLabel:
+    """Mock label object."""
+    def __init__(self, name):
+        self.name = name
+
+
+class MockDateTime:
+    """Mock datetime object."""
+    def __init__(self, iso_string):
+        self._iso = iso_string
+
+    def isoformat(self):
+        return self._iso
+
 
 class IssueValidationAgent:
-    def __init__(self):
+    def __init__(self, local_mode=False, issue_data=None):
+        """
+        Initialize the validation agent.
+
+        Args:
+            local_mode: If True, run without GitHub access (for testing)
+            issue_data: Dict containing issue data for local testing
+        """
+        self.local_mode = local_mode
+        self.temp_dir = Path(tempfile.mkdtemp())
+
+        if local_mode:
+            self._init_local_mode(issue_data or {})
+        else:
+            self._init_github_mode()
+
+    def _init_github_mode(self):
+        """Initialize with GitHub API access."""
+        if not GITHUB_AVAILABLE:
+            raise RuntimeError("PyGithub is not installed. Install with: pip install PyGithub")
+
         self.github_token = os.environ['GITHUB_TOKEN']
         self.copilot_pat = os.environ['COPILOT_PAT']
         self.issue_number = os.environ['ISSUE_NUMBER']
@@ -20,12 +145,39 @@ class IssueValidationAgent:
         self.issue_body = os.environ.get('ISSUE_BODY', '')
         self.issue_author = os.environ['ISSUE_AUTHOR']
         self.repository = os.environ['REPOSITORY']
-        
+
         self.gh = Github(self.github_token)
         self.repo = self.gh.get_repo(self.repository)
         self.issue = self.repo.get_issue(int(self.issue_number))
-        
-        self.temp_dir = Path(tempfile.mkdtemp())
+
+    def _init_local_mode(self, issue_data):
+        """Initialize with mock data for local testing."""
+        print("Running in LOCAL TEST MODE - no GitHub access")
+        print("-" * 40)
+
+        self.copilot_pat = os.environ.get('COPILOT_PAT', os.environ.get('GITHUB_TOKEN', ''))
+        self.issue_number = issue_data.get('number', 999)
+        self.issue_title = issue_data.get('title', 'Test Issue Title')
+        self.issue_body = issue_data.get('body', 'Test issue body content')
+        self.issue_author = issue_data.get('author', 'test-user')
+        self.repository = issue_data.get('repository', 'test-owner/test-repo')
+
+        # Create mock objects
+        self.issue = MockIssue(
+            self.issue_number,
+            self.issue_title,
+            self.issue_body,
+            self.issue_author
+        )
+
+        # Create mock repo with historical issues if provided
+        historical_issues = [
+            MockHistoricalIssue(i) for i in issue_data.get('historical_issues', [])
+        ]
+        self.repo = MockRepo(historical_issues)
+
+        # Store additional local mode options
+        self.skip_wiki = issue_data.get('skip_wiki', False)
         
     def run_copilot(self, prompt, context_files=None):
         """Execute copilot CLI with given prompt and optional context files."""
@@ -172,33 +324,38 @@ Please update your issue with these details. We'll review it again once you've p
         # Download wiki as markdown files
         wiki_dir = self.temp_dir / "wiki"
         wiki_files = []
-        
-        try:
-            wiki_dir.mkdir(exist_ok=True)
-            
-            # Clone the wiki repository
-            wiki_url = f"https://github.com/{self.repository}.wiki.git"
-            print(f"Cloning wiki from {wiki_url}")
-            
-            result = subprocess.run(
-                ["git", "clone", wiki_url, str(wiki_dir)],
-                capture_output=True,
-                text=True,
-                timeout=60
-            )
-            
-            if result.returncode == 0:
-                # Get all markdown files from wiki
-                wiki_files = list(wiki_dir.glob("*.md"))
-                print(f"Downloaded {len(wiki_files)} wiki pages")
-            else:
-                print(f"Could not clone wiki: {result.stderr}")
-        except subprocess.TimeoutExpired:
-            print("Wiki clone timed out")
-        except FileNotFoundError:
-            print("Git not found, skipping wiki download")
-        except Exception as e:
-            print(f"Could not access wiki: {e}")
+
+        # Skip wiki clone if in local mode with skip_wiki flag
+        skip_wiki = getattr(self, 'skip_wiki', False)
+        if skip_wiki:
+            print("Skipping wiki clone (--skip-wiki flag set)")
+        else:
+            try:
+                wiki_dir.mkdir(exist_ok=True)
+                
+                # Clone the wiki repository
+                wiki_url = f"https://github.com/{self.repository}.wiki.git"
+                print(f"Cloning wiki from {wiki_url}")
+                
+                result = subprocess.run(
+                    ["git", "clone", wiki_url, str(wiki_dir)],
+                    capture_output=True,
+                    text=True,
+                    timeout=60
+                )
+                
+                if result.returncode == 0:
+                    # Get all markdown files from wiki
+                    wiki_files = list(wiki_dir.glob("*.md"))
+                    print(f"Downloaded {len(wiki_files)} wiki pages")
+                else:
+                    print(f"Could not clone wiki: {result.stderr}")
+            except subprocess.TimeoutExpired:
+                print("Wiki clone timed out")
+            except FileNotFoundError:
+                print("Git not found, skipping wiki download")
+            except Exception as e:
+                print(f"Could not access wiki: {e}")
         
         # Gather context files: summary, wiki pages, and README files
         readme_files = list(Path(".").glob("**/README.md"))
@@ -383,6 +540,10 @@ Please review these issues to see if they provide helpful context or solutions."
             self.step5_check_duplicates(summary_file, issues_file)
             
             print("Validation workflow completed successfully")
+
+            # Print summary in local mode
+            if self.local_mode:
+                self._print_local_summary()
             
         except Exception as e:
             print(f"Error during validation workflow: {e}")
@@ -392,6 +553,162 @@ Please review these issues to see if they provide helpful context or solutions."
             import shutil
             shutil.rmtree(self.temp_dir, ignore_errors=True)
 
+    def _print_local_summary(self):
+        """Print a summary of actions that would have been taken in production."""
+        print("\n" + "=" * 60)
+        print("LOCAL TEST SUMMARY")
+        print("=" * 60)
+        print(f"Issue: #{self.issue_number} - {self.issue_title}")
+        print(f"Author: {self.issue_author}")
+        print("-" * 60)
+
+        if hasattr(self.issue, 'labels') and self.issue.labels:
+            print(f"Labels that would be applied: {', '.join(self.issue.labels)}")
+        else:
+            print("No labels would be applied")
+
+        if hasattr(self.issue, 'comments') and self.issue.comments:
+            print(f"\nComments that would be posted: {len(self.issue.comments)}")
+            for i, comment in enumerate(self.issue.comments, 1):
+                print(f"\n--- Comment {i} ---")
+                # Truncate long comments for summary
+                if len(comment) > 500:
+                    print(comment[:500] + "\n... (truncated)")
+                else:
+                    print(comment)
+        else:
+            print("\nNo comments would be posted")
+
+        print("=" * 60)
+
+
+def parse_args():
+    """Parse command-line arguments."""
+    parser = argparse.ArgumentParser(
+        description='GitHub Issue Validation Agent',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Run in production mode (requires GitHub environment variables):
+  python validate_issue.py
+
+  # Run in local test mode with a JSON file:
+  python validate_issue.py --local --issue-file test_issue.json
+
+  # Run in local test mode with inline data:
+  python validate_issue.py --local --issue-number 123 --issue-title "Bug report" \\
+      --issue-body "Steps to reproduce..." --issue-author "testuser"
+
+  # Run with mock historical issues for duplicate detection:
+  python validate_issue.py --local --issue-file test_issue.json --historical-issues history.json
+        """
+    )
+
+    parser.add_argument(
+        '--local', '-l',
+        action='store_true',
+        help='Run in local test mode without GitHub access'
+    )
+    parser.add_argument(
+        '--issue-file', '-f',
+        type=str,
+        help='Path to JSON file containing issue data for local testing'
+    )
+    parser.add_argument(
+        '--issue-number', '-n',
+        type=int,
+        default=999,
+        help='Issue number for local testing (default: 999)'
+    )
+    parser.add_argument(
+        '--issue-title', '-t',
+        type=str,
+        default='Test Issue',
+        help='Issue title for local testing'
+    )
+    parser.add_argument(
+        '--issue-body', '-b',
+        type=str,
+        default='',
+        help='Issue body for local testing'
+    )
+    parser.add_argument(
+        '--issue-author', '-a',
+        type=str,
+        default='test-user',
+        help='Issue author for local testing'
+    )
+    parser.add_argument(
+        '--repository', '-r',
+        type=str,
+        default='hpcc-systems/hpcc4j',
+        help='Repository name for local testing (default: hpcc-systems/hpcc4j)'
+    )
+    parser.add_argument(
+        '--historical-issues',
+        type=str,
+        help='Path to JSON file containing historical issues for duplicate detection'
+    )
+    parser.add_argument(
+        '--skip-wiki',
+        action='store_true',
+        help='Skip wiki clone in local mode (useful if no network access)'
+    )
+
+    return parser.parse_args()
+
+
+def load_issue_data(args):
+    """Load issue data from file or command-line arguments."""
+    issue_data = {}
+
+    # Load from file if provided
+    if args.issue_file:
+        try:
+            with open(args.issue_file, 'r') as f:
+                issue_data = json.load(f)
+            print(f"Loaded issue data from {args.issue_file}")
+        except FileNotFoundError:
+            print(f"Warning: Issue file not found: {args.issue_file}")
+        except json.JSONDecodeError as e:
+            print(f"Warning: Failed to parse issue file: {e}")
+
+    # Override with command-line arguments if provided
+    if args.issue_number != 999 or 'number' not in issue_data:
+        issue_data['number'] = args.issue_number
+    if args.issue_title != 'Test Issue' or 'title' not in issue_data:
+        issue_data['title'] = args.issue_title
+    if args.issue_body or 'body' not in issue_data:
+        issue_data['body'] = args.issue_body
+    if args.issue_author != 'test-user' or 'author' not in issue_data:
+        issue_data['author'] = args.issue_author
+    if args.repository != 'hpcc-systems/hpcc4j' or 'repository' not in issue_data:
+        issue_data['repository'] = args.repository
+
+    # Load historical issues if provided
+    if args.historical_issues:
+        try:
+            with open(args.historical_issues, 'r') as f:
+                issue_data['historical_issues'] = json.load(f)
+            print(f"Loaded {len(issue_data['historical_issues'])} historical issues")
+        except FileNotFoundError:
+            print(f"Warning: Historical issues file not found: {args.historical_issues}")
+        except json.JSONDecodeError as e:
+            print(f"Warning: Failed to parse historical issues file: {e}")
+
+    # Store skip_wiki preference
+    issue_data['skip_wiki'] = args.skip_wiki
+
+    return issue_data
+
+
 if __name__ == "__main__":
-    agent = IssueValidationAgent()
+    args = parse_args()
+
+    if args.local:
+        issue_data = load_issue_data(args)
+        agent = IssueValidationAgent(local_mode=True, issue_data=issue_data)
+    else:
+        agent = IssueValidationAgent()
+
     agent.run()
