@@ -19,14 +19,16 @@ jobs:
 
       - name: "Configure GitHub CLI authentication"
         env:
-          GITHUB_TOKEN: ${{ secrets.COPILOT_PAT }}
+          GH_TOKEN: ${{ secrets.COPILOT_PAT }}
         run: |
-          echo "$GITHUB_TOKEN" | gh auth login --with-token
+          # Authenticate non-interactively using GH_TOKEN
+          echo "$GH_TOKEN" | gh auth login --with-token
           gh auth status
+          echo "GitHub CLI authenticated successfully"
 
       - name: "Test Copilot CLI"
         env:
-          GITHUB_TOKEN: ${{ secrets.COPILOT_PAT }}
+          GH_TOKEN: ${{ secrets.COPILOT_PAT }}
         run: |
           echo "Testing Copilot CLI..."
           copilot -p "echo hello world"
