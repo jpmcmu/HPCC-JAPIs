@@ -21,8 +21,21 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.COPILOT_PAT }}
         run: |
-          # Authenticate non-interactively using GH_TOKEN
-          echo "$GH_TOKEN" | gh auth login --with-token
+          # Debug: Check if token is set (show only first 4 chars)
+          if [ -z "$GH_TOKEN" ]; then
+            echo "ERROR: COPILOT_PAT secret is not set!"
+            exit 1
+          fi
+          echo "Token is set (first 4 chars): ${GH_TOKEN:0:4}..."
+          
+          # Set up git config to avoid prompts
+          git config --global user.email "github-actions@github.com"
+          git config --global user.name "GitHub Actions"
+          
+          # Authenticate using the token
+          echo "$GH_TOKEN" | gh auth login --with-token --hostname github.com
+          
+          # Verify authentication
           gh auth status
           echo "GitHub CLI authenticated successfully"
 
