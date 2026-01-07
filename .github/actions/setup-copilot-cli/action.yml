@@ -34,13 +34,15 @@ runs:
       id: get-version
       shell: bash
       run: |
-        if ! VERSION=$(copilot --version 2>&1); then
+        if ! VERSION_OUTPUT=$(copilot --version 2>&1); then
           echo "❌ ERROR: Failed to get Copilot CLI version (exit code: $?)"
           echo "Copilot CLI may not be properly installed"
           exit 1
         fi
+        # Extract just the version number (first line)
+        VERSION=$(echo "$VERSION_OUTPUT" | head -n 1)
         echo "version=$VERSION" >> $GITHUB_OUTPUT
-        echo "✓ Copilot CLI version: $VERSION"
+        echo "✓ Copilot CLI version: $VERSION_OUTPUT"
 
     - name: 'Verify GitHub CLI authentication'
       shell: bash
