@@ -16,7 +16,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Copilot CLI
-        uses: githubnext/setup-copilot-cli@v1
+        uses: ./.github/actions/setup-copilot-cli
+        with:
+          copilot-pat: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Python
         uses: actions/setup-python@v5
