@@ -18,6 +18,10 @@ inputs:
     description: 'GitHub token for API access (can use GITHUB_TOKEN)'
     required: false
     default: ''
+  workflow-file:
+    description: 'Workflow filename (e.g., issue-validation.yml) for usage tracking'
+    required: false
+    default: ''
 
 outputs:
   copilot-version:
@@ -57,15 +61,20 @@ runs:
         
         echo "📊 Checking workflow usage for actor: ${{ github.actor }}"
         
+        WORKFLOW_FILE="${{ inputs.workflow-file }}"
+        
+        # Validate workflow file is provided
+        if [ -z "$WORKFLOW_FILE" ]; then
+          echo "⚠️ WARNING: workflow-file input not provided, skipping usage check"
+          exit 0
+        fi
+        
         CUTOFF_DATE=$(date -u -d '30 days ago' '+%Y-%m-%dT%H:%M:%SZ')
         echo "Querying runs since: $CUTOFF_DATE"
-        
-        # Get workflow file name from the workflow path
-        WORKFLOW_FILE=$(basename "${{ github.workflow_ref }}" | cut -d'@' -f1 | sed 's/.*\///')
         echo "Workflow file: $WORKFLOW_FILE"
+        echo "Actor: ${{ github.actor }}"
         
         # Query workflow runs for this actor in the past month
-        # Using pagination to handle repos with many runs
         RUN_COUNT=0
         PAGE=1
         PER_PAGE=100
@@ -86,13 +95,13 @@ runs:
           
           TOTAL_RESULTS=$(echo "$API_RESPONSE" | jq -r '.workflow_runs | length' 2>/dev/null || echo "0")
           
+          
           if [ "$TOTAL_RESULTS" = "0" ]; then
             break
           fi
           
           # Count runs created after cutoff date
-          PAGE_COUNT=$(echo "$API_RESPONSE" | jq "[.workflow_runs[] | select(.created_at > \"${CUTOFF_DATE}\")] | length")
-          
+          PAGE_COUNT=$(echo "$API_RESPONSE" | jq -r '[.workflow_runs[] | select(.created_at > "'"${CUTOFF_DATE}"'")] | length' 2>/dev/null || echo "0")
           RUN_COUNT=$((RUN_COUNT + PAGE_COUNT))
           
           # Early exit if limit already exceeded - no need to continue paginating

@@ -21,6 +21,7 @@ jobs:
           copilot-pat: ${{ secrets.COPILOT_PAT }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           max-runs-per-month: 60
+          workflow-file: 'issue-validation.yml'
 
       - name: Setup Python
         uses: actions/setup-python@v5
