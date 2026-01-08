@@ -18,7 +18,9 @@ jobs:
       - name: Setup Copilot CLI
         uses: ./.github/actions/setup-copilot-cli
         with:
-          copilot-pat: ${{ secrets.GITHUB_TOKEN }}
+          copilot-pat: ${{ secrets.COPILOT_PAT }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          max-runs-per-month: 60
 
       - name: Setup Python
         uses: actions/setup-python@v5
