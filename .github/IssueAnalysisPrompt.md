@@ -141,6 +141,49 @@ HPCCWsClient client = HPCCWsClient.get(conn);
 - [ ] Links to related issues or documentation
 - [ ] Timeline (when did this start happening?)
 
+### 11. Pre-submission Checklist Compliance
+
+The issue templates require users to confirm they've checked the Common Issues wiki:
+- [ ] Does the issue indicate familiarity with documented solutions?
+- [ ] Is this a known issue that's already documented in wiki?
+- [ ] Should the user be directed to existing documentation?
+
+**Wiki Link:** [Common Issues and Solutions wiki](https://github.com/hpcc-systems/hpcc4j/wiki/Common-Issues-and-Solutions)
+
+### 12. Issue-Type Specific Requirements
+
+#### For Bug Reports (must have):
+- [ ] Steps to Reproduce (numbered list)
+- [ ] Expected Behavior (clearly stated)
+- [ ] Actual Behavior (with error messages/stack traces)
+- [ ] HPCC Systems Version (required field)
+- [ ] HPCC4J Module (required dropdown selection)
+- [ ] HPCC4J Version (required field)
+- [ ] Java Version (required field)
+- [ ] Environment/Configuration (ESP endpoint, auth method, OS, build tool)
+- [ ] Code Sample (minimal reproducible example)
+
+#### For Feature Requests (must have):
+- [ ] Feature Description (clear and concise)
+- [ ] Problem Statement (use case and what problem it solves)
+- [ ] Affected Module(s) (can be multiple)
+- [ ] Priority/Impact level (Critical/High/Medium/Low)
+- [ ] Example Usage (pseudo-code showing intended API)
+
+Optional for Features:
+- [ ] Proposed Solution (implementation ideas)
+- [ ] Alternatives Considered (workarounds or other approaches)
+- [ ] Contribution willingness (would submit PR)
+
+#### For Questions (must have):
+- [ ] Clear question with context about what they're trying to accomplish
+- [ ] What they've already tried
+- [ ] Confirmation they checked the Common Issues wiki
+
+Optional for Questions:
+- [ ] Related Module
+- [ ] Code Sample or environment details
+
 ## Analysis Output Format
 
 Provide your analysis in the following structure:
@@ -152,18 +195,34 @@ Provide your analysis in the following structure:
 
 ### Identified Information
 - **Issue Type:** [bug/feature/question/documentation]
-- **Affected Module:** [module name or "unclear"]
+- **Affected Module:** [module name or "unclear" or "multiple"]
 - **HPCC4J Version:** [version or "NOT PROVIDED"]
 - **HPCC Platform Version:** [version or "NOT PROVIDED"]
 - **Java Version:** [version or "NOT PROVIDED"]
-- **Has Reproduction Steps:** [YES/NO/PARTIAL]
-- **Has Error Details:** [YES/NO/PARTIAL]
+- **Has Reproduction Steps:** [YES/NO/PARTIAL/N/A]
+- **Has Error Details:** [YES/NO/PARTIAL/N/A]
+- **Template Compliance:** [FULL/PARTIAL/NONE - based on required fields]
+- **Checked Common Issues Wiki:** [YES/NO/UNCLEAR]
 
 ### Missing Information
 [Bulleted list of critical missing information]
 
 ### Validation Issues
-[List any version numbers or configurations that appear invalid]
+### Template Compliance Check
+
+[Identify which required template fields are missing or incomplete]
+
+For Bug Reports:
+- Missing required fields: [list]
+- Incomplete fields: [list]
+
+For Feature Requests:
+- Missing required fields: [list]
+- Missing priority assessment: [YES/NO]
+
+For Questions:
+- Wiki check confirmation: [YES/NO]
+- Sufficient context provided: [YES/NO]
 
 ### Recommended Questions for Reporter
 
@@ -173,9 +232,18 @@ Example:
 1. **What version of HPCC4J are you using?**
    - Check your pom.xml dependency or run: `mvn dependency:tree | grep hpccsystems`
 
-2. **What is your HPCC Systems platform version?**
-   - Found in ESP interface footer or run: `eclcc --version`
+## Important Notes
 
+1. **Be constructive and helpful** - The goal is to help users provide the information needed to resolve their issue
+2. **Validate version numbers** - Check if provided versions are realistic and compatible
+3. **Consider security** - Remind users not to share passwords or sensitive connection details
+4. **Module context matters** - Different modules have different common issues (connection problems for wsclient, schema issues for spark-hpcc, etc.)
+5. **Look for implicit information** - Sometimes version info or error details can be inferred from code snippets or error messages
+6. **Template adherence** - Issues should follow template requirements. If free-form issues are submitted, guide users to use templates
+7. **Wiki awareness** - Always check if the issue is already addressed in the Common Issues and Solutions wiki before requesting more information
+8. **Issue type specificity** - Apply different validation criteria based on whether it's a bug, feature request, or question
+9. **Priority alignment** - For feature requests, validate that the stated priority aligns with the described use case and impact
+   - Please review: https://github.com/hpcc-systems/hpcc4j/wiki/Common-Issues-and-Solutions
 3. **Can you provide the full error stack trace?**
    - Copy the complete error from your console or log files
 
