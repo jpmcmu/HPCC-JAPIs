@@ -22,6 +22,14 @@ inputs:
     description: 'Workflow filename (e.g., issue-validation.yml) for usage tracking'
     required: false
     default: ''
+  actor-whitelist:
+    description: 'Comma-separated list of allowed GitHub usernames (empty = allow all)'
+    required: false
+    default: ''
+  actor-blacklist:
+    description: 'Comma-separated list of blocked GitHub usernames'
+    required: false
+    default: ''
 
 outputs:
   copilot-version:
@@ -37,6 +45,56 @@ outputs:
 runs:
   using: 'composite'
   steps:
+    - name: 'Validate actor access'
+      shell: bash
+      env:
+        ACTOR: ${{ github.actor }}
+        WHITELIST: ${{ inputs.actor-whitelist }}
+        BLACKLIST: ${{ inputs.actor-blacklist }}
+      run: |
+        echo "🔍 Validating actor access for: $ACTOR"
+        
+        # Check blacklist first
+        if [ -n "$BLACKLIST" ]; then
+          IFS=',' read -ra BLOCKED <<< "$BLACKLIST"
+          for blocked_user in "${BLOCKED[@]}"; do
+            # Trim whitespace
+            blocked_user=$(echo "$blocked_user" | xargs)
+            if [ "$ACTOR" = "$blocked_user" ]; then
+              echo "❌ ERROR: Actor '$ACTOR' is blacklisted and cannot use this action"
+              echo "This user has been blocked from running this workflow."
+              exit 1
+            fi
+          done
+        fi
+        
+        # Check whitelist if specified
+        if [ -n "$WHITELIST" ]; then
+          ALLOWED=false
+          IFS=',' read -ra ALLOWED_USERS <<< "$WHITELIST"
+          for allowed_user in "${ALLOWED_USERS[@]}"; do
+            # Trim whitespace
+            allowed_user=$(echo "$allowed_user" | xargs)
+            if [ "$ACTOR" = "$allowed_user" ]; then
+              ALLOWED=true
+              break
+            fi
+          done
+          
+          if [ "$ALLOWED" = "false" ]; then
+            echo "❌ ERROR: Actor '$ACTOR' is not whitelisted for this action"
+            echo "Allowed users: $WHITELIST"
+            echo "Please contact a repository administrator for access."
+            exit 1
+          fi
+          
+          echo "✅ Actor '$ACTOR' is whitelisted"
+        else
+          echo "ℹ️ No whitelist configured - all non-blacklisted users allowed"
+        fi
+        
+        echo "✅ Actor access validated"
+
     - name: 'Check usage limit'
       id: check-usage
       shell: bash
