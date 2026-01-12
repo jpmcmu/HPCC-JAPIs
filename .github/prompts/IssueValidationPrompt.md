@@ -1,4 +1,4 @@
-# HPCC4J Issue Analysis Prompt
+# HPCC4J Issue Validation Prompt
 
 You are analyzing a GitHub issue for the HPCC4J project, a Java library for interacting with HPCC Systems clusters. Your task is to determine if the issue contains sufficient information for developers to investigate and resolve it.
 
@@ -9,7 +9,11 @@ You are analyzing a GitHub issue for the HPCC4J project, a Java library for inte
 **Body:**
 {ISSUE_BODY}
 
-## Analysis Checklist
+## Analysis Task
+
+Perform a comprehensive validation of this issue against the checklist below and output a structured markdown analysis.
+
+## Validation Checklist
 
 ### 1. Issue Type Classification
 - [ ] Is this a bug report, feature request, question, or documentation issue?
@@ -184,81 +188,94 @@ Optional for Questions:
 - [ ] Related Module
 - [ ] Code Sample or environment details
 
-## Analysis Output Format
+## Output Format
 
-Provide your analysis in the following structure:
+Provide your analysis as a **markdown document** (not JSON) with the following structure:
 
-### Assessment: [SUFFICIENT / NEEDS_MORE_INFO]
+# Issue Validation Report
 
-### Summary
-[Brief 2-3 sentence summary of the issue and its completeness]
+## Assessment
+**Status:** [SUFFICIENT / NEEDS_MORE_INFO]  
+**Confidence:** [HIGH / MEDIUM / LOW]
 
-### Identified Information
-- **Issue Type:** [bug/feature/question/documentation]
+## Issue Classification
+- **Type:** [bug/feature/question/documentation]
 - **Affected Module:** [module name or "unclear" or "multiple"]
+- **Priority:** [Critical/High/Medium/Low - based on severity and impact]
+
+## Completeness Analysis
+
+### Provided Information
 - **HPCC4J Version:** [version or "NOT PROVIDED"]
 - **HPCC Platform Version:** [version or "NOT PROVIDED"]
 - **Java Version:** [version or "NOT PROVIDED"]
-- **Has Reproduction Steps:** [YES/NO/PARTIAL/N/A]
-- **Has Error Details:** [YES/NO/PARTIAL/N/A]
-- **Template Compliance:** [FULL/PARTIAL/NONE - based on required fields]
-- **Checked Common Issues Wiki:** [YES/NO/UNCLEAR]
+- **Reproduction Steps:** [YES/NO/PARTIAL/N/A]
+- **Error Details:** [YES/NO/PARTIAL/N/A]
+- **Code Sample:** [YES/NO/PARTIAL/N/A]
+- **Environment Info:** [YES/NO/PARTIAL/N/A]
 
-### Missing Information
-[Bulleted list of critical missing information]
-
-### Validation Issues
-### Template Compliance Check
-
-[Identify which required template fields are missing or incomplete]
+### Template Compliance
+**Overall:** [FULL/PARTIAL/NONE]
 
 For Bug Reports:
-- Missing required fields: [list]
-- Incomplete fields: [list]
+- Missing required fields: [list or "None"]
+- Incomplete fields: [list or "None"]
 
 For Feature Requests:
-- Missing required fields: [list]
-- Missing priority assessment: [YES/NO]
+- Missing required fields: [list or "None"]
+- Priority assessment provided: [YES/NO]
 
 For Questions:
-- Wiki check confirmation: [YES/NO]
-- Sufficient context provided: [YES/NO]
+- Wiki check confirmed: [YES/NO/UNCLEAR]
+- Sufficient context: [YES/NO]
 
-### Recommended Questions for Reporter
+## Critical Missing Information
 
-[Provide 3-5 specific questions to gather missing information, with instructions on how to obtain it]
+[Bulleted list of the most important missing information that blocks resolution. Be specific.]
 
 Example:
-1. **What version of HPCC4J are you using?**
-   - Check your pom.xml dependency or run: `mvn dependency:tree | grep hpccsystems`
+- HPCC4J version number (check pom.xml)
+- Full error stack trace from console
+- Java version (run `java -version`)
 
-## Important Notes
+## Validation Issues
 
-1. **Be constructive and helpful** - The goal is to help users provide the information needed to resolve their issue
-2. **Validate version numbers** - Check if provided versions are realistic and compatible
-3. **Consider security** - Remind users not to share passwords or sensitive connection details
-4. **Module context matters** - Different modules have different common issues (connection problems for wsclient, schema issues for spark-hpcc, etc.)
-5. **Look for implicit information** - Sometimes version info or error details can be inferred from code snippets or error messages
-6. **Template adherence** - Issues should follow template requirements. If free-form issues are submitted, guide users to use templates
-7. **Wiki awareness** - Always check if the issue is already addressed in the Common Issues and Solutions wiki before requesting more information
-8. **Issue type specificity** - Apply different validation criteria based on whether it's a bug, feature request, or question
-9. **Priority alignment** - For feature requests, validate that the stated priority aligns with the described use case and impact
-   - Please review: https://github.com/hpcc-systems/hpcc4j/wiki/Common-Issues-and-Solutions
-3. **Can you provide the full error stack trace?**
-   - Copy the complete error from your console or log files
+[List any version numbers or configurations that appear invalid or incompatible]
 
-### Suggested Labels
-[Suggest GitHub labels: bug, enhancement, question, needs-more-info, wsclient, dfsclient, spark-hpcc, etc.]
+Example:
+- HPCC4J 9.x with HPCC Platform 7.x may have compatibility issues
+- Java 7 is below minimum requirement of Java 8
 
-### Priority Assessment
-[Low/Medium/High based on severity and clarity of issue]
+## Implicit Information
+
+[Information that can be inferred from code snippets, error messages, or context but should be explicitly confirmed]
 
 ---
 
-## Important Notes
+## Guidance Notes for Response Generation
 
-1. **Be constructive and helpful** - The goal is to help users provide the information needed to resolve their issue
+### Suggested Labels
+[Comma-separated list: bug, enhancement, question, needs-more-info, module-name, etc.]
+
+### Should Check Documentation
+[YES/NO - Does this appear to be something that might be documented?]
+
+### Possible User Error
+[YES/NO - Could this be a configuration or usage error?]
+
+### Check for Duplicates
+[YES/NO - Is this a common issue type that likely has duplicates?]
+
+---
+
+## Important Validation Notes
+
+1. **Be constructive and helpful** - The goal is to help users provide the information needed
 2. **Validate version numbers** - Check if provided versions are realistic and compatible
-3. **Consider security** - Remind users not to share passwords or sensitive connection details
-4. **Module context matters** - Different modules have different common issues (connection problems for wsclient, schema issues for spark-hpcc, etc.)
-5. **Look for implicit information** - Sometimes version info or error details can be inferred from code snippets or error messages
+3. **Consider security** - Note if sensitive information was shared
+4. **Module context matters** - Different modules have different common issues
+5. **Look for implicit information** - Version info can sometimes be inferred
+6. **Template adherence** - Issues should follow template requirements
+7. **Wiki awareness** - Some issues may be documented
+8. **Issue type specificity** - Apply different criteria based on type
+9. **Priority alignment** - For feature requests, validate priority aligns with impact
