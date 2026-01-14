@@ -13,7 +13,7 @@ from pathlib import Path
 from github import Github
 
 # Global configuration
-COPILOT_MODEL = "gpt-4"  # Model to use with Copilot CLI
+COPILOT_MODEL = "gpt-4.1"  # Model to use with Copilot CLI
 COPILOT_TIMEOUT = 120  # Timeout in seconds for Copilot calls
 MAX_ISSUES_TO_CHECK = 200  # Limit for duplicate detection
 
