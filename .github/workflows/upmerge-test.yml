@@ -160,7 +160,8 @@ jobs:
 
                         curMinor = 0
                         if curMajor == branchVersion[0]:
-                            curMinor = branchVersion[1]
+                            # Start from next minor version to skip current branch
+                            curMinor = branchVersion[1] + 2
 
                         latestMinor = latestVersionInMajor[1]
 
