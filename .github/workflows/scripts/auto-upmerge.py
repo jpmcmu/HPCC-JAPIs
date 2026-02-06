@@ -170,17 +170,94 @@ def getTargetInBranchVersion(targetBranch):
 
 
 def check_merge_conflicts(source_ref, target_ref):
-    """Use git merge-tree to check for conflicts without touching working tree."""
+    """Use git merge-tree to check for conflicts without touching working tree.
+    
+    Returns:
+        tuple: (has_conflicts, conflict_info) where conflict_info is a dict with:
+            - conflicted_files: list of file paths with conflicts
+            - conflict_details: dict mapping file paths to their conflict sections
+    """
+    # First, get the list of conflicted files
     cmd = ["git", "merge-tree", "--name-only", source_ref, target_ref]
     result = subprocess.run(cmd, capture_output=True, text=True)
     
     # merge-tree --name-only: non-zero return code or non-empty output indicates conflicts
     if result.returncode != 0 or result.stdout.strip():
         # Parse conflicting file list from output
-        conflicts = [f.strip() for f in result.stdout.strip().split('\n') if f.strip()]
-        return True, conflicts
+        conflicted_files = [f.strip() for f in result.stdout.strip().split('\n') if f.strip()]
+        
+        # Now get the full merge-tree output with conflict markers
+        cmd_full = ["git", "merge-tree", source_ref, target_ref]
+        result_full = subprocess.run(cmd_full, capture_output=True, text=True)
+        
+        # Parse the full output to extract conflict sections
+        conflict_details = parse_merge_tree_conflicts(result_full.stdout, conflicted_files)
+        
+        conflict_info = {
+            "conflicted_files": conflicted_files,
+            "conflict_details": conflict_details
+        }
+        
+        return True, conflict_info
     
-    return False, []
+    return False, {}
+
+
+def parse_merge_tree_conflicts(merge_tree_output, conflicted_files):
+    """Parse git merge-tree output to extract conflict sections for each file.
+    
+    Args:
+        merge_tree_output: Full output from git merge-tree command
+        conflicted_files: List of file paths known to have conflicts
+        
+    Returns:
+        dict: Mapping of file paths to list of conflict sections
+    """
+    conflict_details = {}
+    
+    # Split output into lines for processing
+    lines = merge_tree_output.split('\n')
+    
+    current_file = None
+    current_conflict = []
+    in_conflict = False
+    
+    for line in lines:
+        # Check if we're entering a conflict section
+        if line.startswith('<<<<<<<'):
+            in_conflict = True
+            current_conflict = [line]
+        # Check if we're exiting a conflict section
+        elif line.startswith('>>>>>>>'):
+            if in_conflict:
+                current_conflict.append(line)
+                
+                # Try to identify which file this conflict belongs to
+                # Look backwards to find file markers
+                if current_file and current_file in conflicted_files:
+                    if current_file not in conflict_details:
+                        conflict_details[current_file] = []
+                    conflict_details[current_file].append('\n'.join(current_conflict))
+                
+                current_conflict = []
+                in_conflict = False
+        # Collect lines within conflict section
+        elif in_conflict:
+            current_conflict.append(line)
+        # Look for file markers in merge-tree output
+        elif line.startswith('diff --cc ') or line.startswith('+++ ') or line.startswith('--- '):
+            # Extract file path from diff headers
+            for filepath in conflicted_files:
+                if filepath in line:
+                    current_file = filepath
+                    break
+    
+    # For any files we couldn't extract detailed conflicts, add a placeholder
+    for filepath in conflicted_files:
+        if filepath not in conflict_details:
+            conflict_details[filepath] = ["Unable to extract conflict details - use git merge-tree manually"]
+    
+    return conflict_details
 
 
 def upmerge_to_branch(source_branch, target_branch, pr_number, pr_title):
@@ -295,20 +372,28 @@ def upmerge_to_branch(source_branch, target_branch, pr_number, pr_title):
     
         # Check for merge conflicts using merge-tree (dry-run)
         log("Checking for merge conflicts...")
-        has_conflicts, conflict_details = check_merge_conflicts(
+        has_conflicts, conflict_info = check_merge_conflicts(
             temp_branch, 
             f"origin/{target_branch}"
         )
         
         upmerge_details["conflict_check"] = {
             "has_conflicts": has_conflicts,
-            "details": conflict_details[:20] if conflict_details else []
+            "conflicted_files": conflict_info.get("conflicted_files", []),
+            "conflict_details": conflict_info.get("conflict_details", {})
         }
         
         if has_conflicts:
+            conflicted_files = conflict_info.get("conflicted_files", [])
             log(f"❌ Conflicts detected during upmerge to {target_branch}:")
-            for detail in conflict_details[:10]:  # Show first 10 conflict lines
-                log(f"   {detail}")
+            log(f"   Total conflicted files: {len(conflicted_files)}")
+            
+            # Show summary of conflicted files
+            for filepath in conflicted_files[:10]:  # Show first 10 files
+                log(f"   • {filepath}")
+            if len(conflicted_files) > 10:
+                log(f"   ... and {len(conflicted_files) - 10} more files")
+            
             # Cleanup: detach HEAD before deleting temp branch
             subprocess.run(["git", "checkout", "--detach", original_ref], capture_output=True)
             subprocess.run(["git", "branch", "-D", temp_branch], capture_output=True)
@@ -506,6 +591,49 @@ def main():
     with open('upmerge-results.json', 'w') as f:
         json.dump(results, f, indent=2)
     
+    # Create detailed conflict report if there were any conflicts
+    conflicts_found = any(
+        detail.get('conflict_check', {}).get('has_conflicts', False) 
+        for detail in detailed_results
+    )
+    
+    if conflicts_found:
+        with open('upmerge-conflicts.md', 'w') as f:
+            f.write(f"# Upmerge Conflict Report\n\n")
+            f.write(f"**PR:** #{pr_number} - {pr_title}\n")
+            f.write(f"**Base Branch:** {base_branch}\n")
+            f.write(f"**Generated:** {results['timestamp']}\n\n")
+            f.write("---\n\n")
+            
+            for detail in detailed_results:
+                conflict_check = detail.get('conflict_check', {})
+                if conflict_check.get('has_conflicts', False):
+                    target = detail['target_branch']
+                    conflicted_files = conflict_check.get('conflicted_files', [])
+                    conflict_details = conflict_check.get('conflict_details', {})
+                    
+                    f.write(f"## {target}\n\n")
+                    f.write(f"**Status:** Conflicts detected\n")
+                    f.write(f"**Conflicted Files:** {len(conflicted_files)}\n\n")
+                    
+                    if conflicted_files:
+                        f.write("### Conflicted Files\n\n")
+                        for filepath in conflicted_files:
+                            f.write(f"- `{filepath}`\n")
+                        f.write("\n")
+                    
+                    if conflict_details:
+                        f.write("### Conflict Details\n\n")
+                        for filepath, conflicts in conflict_details.items():
+                            f.write(f"#### {filepath}\n\n")
+                            for i, conflict in enumerate(conflicts, 1):
+                                f.write(f"**Conflict {i}:**\n")
+                                f.write("```diff\n")
+                                f.write(conflict)
+                                f.write("\n```\n\n")
+                    
+                    f.write("---\n\n")
+    
     # Create human-readable summary using buffered logs
     with open('upmerge-summary.txt', 'w') as f:
         f.write(get_buffered_logs())
@@ -521,7 +649,15 @@ def main():
             if detail.get('error'):
                 f.write(f"  Error: {detail['error']}\n")
             if detail.get('conflict_check'):
-                f.write(f"  Had Conflicts: {detail['conflict_check'].get('has_conflicts', 'unknown')}\n")
+                conflict_check = detail['conflict_check']
+                f.write(f"  Had Conflicts: {conflict_check.get('has_conflicts', 'unknown')}\n")
+                if conflict_check.get('has_conflicts'):
+                    conflicted_files = conflict_check.get('conflicted_files', [])
+                    f.write(f"  Conflicted Files ({len(conflicted_files)}):\n")
+                    for filepath in conflicted_files[:20]:  # Show first 20 files
+                        f.write(f"    - {filepath}\n")
+                    if len(conflicted_files) > 20:
+                        f.write(f"    ... and {len(conflicted_files) - 20} more\n")
             f.write("\n")
     
     # Exit with error if any upmerges failed
