@@ -5,18 +5,25 @@ Test Generator Agent for HPCC4J
 This script automates the process of generating comprehensive tests for HPCC Java client methods.
 
 Usage:
+    # Single-method mode:
     ./TestGeneratorAgent.py <SERVICE_NAME> <METHOD_NAME> --hpcc-source <HPCC_PLATFORM_DIR>
+    
+    # Full-service mode (generates tests for ALL business methods):
+    ./TestGeneratorAgent.py <SERVICE_NAME> --hpcc-source <HPCC_PLATFORM_DIR>
     
 Example:
     ./TestGeneratorAgent.py WsDFU getFileDataColumns --hpcc-source ../HPCC-Platform
     ./TestGeneratorAgent.py WsDFU getFileDataColumns -s ~/projects/HPCC-Platform
+    ./TestGeneratorAgent.py WSStore -s ../HPCC-Platform --model claude-sonnet-4
 
 Arguments:
-    SERVICE_NAME       Name of the HPCC service (e.g., WsDFU, WsWorkunits)
-    METHOD_NAME        Name of the method to test (e.g., getFileDataColumns)
+    SERVICE_NAME       Name of the HPCC service (e.g., WsDFU, WsWorkunits, WSStore)
+    METHOD_NAME        Name of the method to test (e.g., getFileDataColumns).
+                       If omitted, generates tests for ALL business methods (full-service mode).
     --hpcc-source, -s  Path to HPCC Platform source code directory (required)
                        Can be relative (e.g., ../HPCC-Platform) or absolute
                        The script will convert it to an absolute path
+    --model, -m        AI model to use for Copilot CLI (e.g., claude-sonnet-4, gpt-4o)
 
 The script will:
 1. Generate a method analysis using the MethodAnalysisPrompt.md template
@@ -32,6 +39,12 @@ The script will:
      * Categorize server issues with @Category(UnverifiedServerIssues.class)
    - Generate comprehensive analysis reports
    - Continue until all tests pass or are properly categorized
+
+Full-service mode additionally:
+0. Discovers all business methods via ServiceAnalysisPrompt.md
+1. Loops per-method analysis for each discovered method
+2. Loops per-method test generation for each method
+3. Aggregates all test metadata before build & test execution
 """
 import subprocess
 import os
@@ -47,11 +60,17 @@ from datetime import datetime
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Generate tests for HPCC service methods")
     parser.add_argument("SERVICE_NAME", help="Name of the service to test")
-    parser.add_argument("METHOD_NAME", help="Name of the method to test")
+    parser.add_argument("METHOD_NAME", nargs='?', default=None,
+                        help="Name of the method to test. If omitted, generates tests for ALL business methods.")
     parser.add_argument("--hpcc-source", "-s", 
                         dest="HPCC_SOURCE_DIR",
                         required=True,
                         help="Path to HPCC Platform source code directory (e.g., ../HPCC-Platform)")
+    parser.add_argument("--model", "-m",
+                        dest="COPILOT_MODEL",
+                        default=None,
+                        help="AI model to use for Copilot CLI (e.g., claude-sonnet-4, gpt-4o). "
+                             "If not specified, uses the Copilot CLI default.")
     parser.add_argument("--hpccconn",
                         dest="HPCC_CONN",
                         default=None,
@@ -77,21 +96,45 @@ def parse_arguments():
                         help="Skip Step 1 (analysis generation) if analysis file already exists")
     parser.add_argument("--start-from-step",
                         type=int,
-                        choices=[1, 2, 3, 4],
-                        default=1,
-                        help="Start from a specific step (1=Analysis, 2=Test Generation, 3=Build, 4=Test Execution)")
+                        choices=[0, 1, 2, 3, 4],
+                        default=0,
+                        help="Start from a specific step (0=Service Discovery [full-service only], "
+                             "1=Analysis, 2=Test Generation, 3=Build, 4=Test Execution)")
     return parser.parse_args()
 
 args = parse_arguments()
 SERVICE_NAME = args.SERVICE_NAME
 METHOD_NAME = args.METHOD_NAME
+FULL_SERVICE_MODE = (METHOD_NAME is None)
+COPILOT_MODEL = args.COPILOT_MODEL
 HPCC_SOURCE_DIR = os.path.abspath(args.HPCC_SOURCE_DIR)  # Convert to absolute path
 SKIP_ANALYSIS = args.skip_analysis
 START_FROM_STEP = args.start_from_step
 
+# Compute the ESP service name: strip leading Ws/WS prefix (case-insensitive) and lowercase.
+# e.g., WsDFU -> dfu, WSStore -> store, WsWorkunits -> workunits
+# This matches the HPCC Platform directory naming convention (esp/services/ws_<name>)
+if SERVICE_NAME.lower().startswith("ws"):
+    ESP_SERVICE_NAME = SERVICE_NAME[2:].lower()
+else:
+    ESP_SERVICE_NAME = SERVICE_NAME.lower()
+
+# In single-method mode, default start step to 1 (skip step 0)
+if not FULL_SERVICE_MODE and START_FROM_STEP == 0:
+    START_FROM_STEP = 1
+
 # Generate datestamp for this test generation run
 DATESTAMP = datetime.now().strftime("%Y-%m-%d")
 print(f"🕐 Test generation started: {DATESTAMP}")
+
+if FULL_SERVICE_MODE:
+    print(f"🔄 Full-service mode: generating tests for ALL business methods in {SERVICE_NAME}")
+    METHOD_NAME = "AllMethods"  # Default for report variables
+else:
+    print(f"🔧 Single-method mode: generating tests for {SERVICE_NAME}.{METHOD_NAME}")
+
+if COPILOT_MODEL:
+    print(f"🤖 Using Copilot model: {COPILOT_MODEL}")
 
 # Validate that the HPCC source directory exists
 if not os.path.exists(HPCC_SOURCE_DIR):
@@ -109,12 +152,16 @@ if not os.path.exists(esp_dir):
 print(f"✅ Using HPCC Platform source: {HPCC_SOURCE_DIR}")
 
 # Create output directory for all test generation artifacts
-OUTPUT_DIR = f"{SERVICE_NAME}_{METHOD_NAME}TestGeneration_{DATESTAMP}"
+if FULL_SERVICE_MODE:
+    OUTPUT_DIR = f"{SERVICE_NAME}_FullServiceTestGeneration_{DATESTAMP}"
+else:
+    OUTPUT_DIR = f"{SERVICE_NAME}_{METHOD_NAME}TestGeneration_{DATESTAMP}"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 print(f"📁 Output directory: {os.path.abspath(OUTPUT_DIR)}")
 
 ARCHITECTURE_FILE = os.path.join(os.path.dirname(__file__), "../../CodeArchitectureAnalysis.md")
 PROMPT_FILE = os.path.join(os.path.dirname(__file__), "MethodAnalysisPrompt.md")
+SERVICE_ANALYSIS_PROMPT_FILE = os.path.join(os.path.dirname(__file__), "ServiceAnalysisPrompt.md")
 TEST_GENERATION_PROMPT_FILE = os.path.join(os.path.dirname(__file__), "TestGenerationPrompt.md")
 FIX_TEST_COMPILATION_PROMPT_FILE = os.path.join(os.path.dirname(__file__), "FixTestCompilationPrompt.md")
 BATCH_FAILURE_ANALYSIS_PROMPT_FILE = os.path.join(os.path.dirname(__file__), "BatchFailureAnalysisPrompt.md")
@@ -253,7 +300,11 @@ def build_copilot_cmd(prompt_text):
     
     Also adds directory context for HPCC4J, HPCC Platform, and tmp directories.
     """
-    cmd = ["copilot", "-p", prompt_text]
+    cmd = ["copilot", "-p", prompt_text, "--no-ask-user"]
+    
+    # Add model selection if specified
+    if COPILOT_MODEL:
+        cmd.extend(["--model", COPILOT_MODEL])
     
     # Add each whitelisted tool
     for tool in COPILOT_WHITELIST:
@@ -312,13 +363,19 @@ def copilot_generate(prompt_file, output_file, variables=None):
     
     # Add HPCC Platform source directory context
     hpcc_context = textwrap.dedent(f"""
-        ## HPCC Platform Source Code Location
+        ## Project Root Directories
 
-        The HPCC Platform source code is located at: `{HPCC_SOURCE_DIR}`
+        **HPCC4J Project Root:** `{HPCC4J_DIR}`
+        **HPCC Platform Source Root:** `{HPCC_SOURCE_DIR}`
+
+        > ⚠️ Always search from these root directories — do NOT use `.` (current working directory)
+        > as the search root, as the script may be run from a different directory.
 
         **Important Paths:**
-        - ESP Service Implementations: `{os.path.join(HPCC_SOURCE_DIR, 'esp/services/ws_' + SERVICE_NAME)}`
-        - IDL Definitions: `{os.path.join(HPCC_SOURCE_DIR, 'esp/scm/ws_' + SERVICE_NAME + '.ecm')}`
+        - ESP Service Implementations: `{os.path.join(HPCC_SOURCE_DIR, 'esp/services/ws_' + ESP_SERVICE_NAME)}`
+        - IDL Definitions: `{os.path.join(HPCC_SOURCE_DIR, 'esp/scm/ws_' + ESP_SERVICE_NAME + '.ecm')}`
+        - Java test files: `{os.path.join(HPCC4J_DIR, 'wsclient/src/test/java')}`
+        - Java source files: `{os.path.join(HPCC4J_DIR, 'wsclient/src/main/java')}`
 
         **Access Note:** 
         Since the HPCC Platform source may be outside the current workspace, you may need to:
@@ -327,8 +384,8 @@ def copilot_generate(prompt_file, output_file, variables=None):
         3. Use file_search or grep_search tools with the full path: `{HPCC_SOURCE_DIR}`
 
         **Key Service Files to Review:**
-        - Server-side implementation: `{os.path.join(HPCC_SOURCE_DIR, 'esp/services/ws_' + SERVICE_NAME)}/`
-        - IDL definition: `{os.path.join(HPCC_SOURCE_DIR, 'esp/scm/ws_' + SERVICE_NAME + '.ecm')}`
+        - Server-side implementation: `{os.path.join(HPCC_SOURCE_DIR, 'esp/services/ws_' + ESP_SERVICE_NAME)}/`
+        - IDL definition: `{os.path.join(HPCC_SOURCE_DIR, 'esp/scm/ws_' + ESP_SERVICE_NAME + '.ecm')}`
     """)
     
     # Create the prompt with file output directive and HPCC context
@@ -446,8 +503,17 @@ def copilot_fix(prompt, context_files):
     
     # Add HPCC Platform source context
     hpcc_context = textwrap.dedent(f"""
-        **HPCC Platform Source Location:**
-        The HPCC Platform source code is at: `{HPCC_SOURCE_DIR}`
+        ## Project Root Directories
+
+        **HPCC4J Project Root:** `{HPCC4J_DIR}`
+        **HPCC Platform Source Root:** `{HPCC_SOURCE_DIR}`
+
+        > ⚠️ Always search from these root directories — do NOT use `.` (current working directory)
+        > as the search root, as the script may be run from a different directory.
+
+        **Key paths:**
+        - Java test files: `{os.path.join(HPCC4J_DIR, 'wsclient/src/test/java')}`
+        - Java source files: `{os.path.join(HPCC4J_DIR, 'wsclient/src/main/java')}`
         - Server implementations: `{os.path.join(HPCC_SOURCE_DIR, 'esp/services')}`
         - IDL definitions: `{os.path.join(HPCC_SOURCE_DIR, 'esp/scm')}`
 
@@ -559,60 +625,279 @@ def save_test_results(results, iteration):
     print(f"✅ Test results saved to: {results_file}")
     return results_file
 
-# === Step 1: Generate Method Analysis ===
-if START_FROM_STEP <= 1:
-    if SKIP_ANALYSIS and os.path.exists(ANALYSIS_FILE):
-        print(f"⏭️  Skipping Step 1: Analysis file {ANALYSIS_FILE} already exists")
+
+def load_method_list(method_list_file):
+    """Load the ordered method list from the Step 0 JSON output.
+    
+    Args:
+        method_list_file: Path to the JSON method list file produced by Step 0
+        
+    Returns:
+        List of method name strings, sorted by analysisOrder
+        
+    Raises:
+        FileNotFoundError: If the JSON file doesn't exist
+        json.JSONDecodeError: If the file is not valid JSON
+        KeyError: If the JSON structure is missing required fields
+    """
+    with open(method_list_file, 'r') as f:
+        data = json.load(f)
+    # Return method names in analysis order
+    methods = sorted(data["methods"], key=lambda m: m["analysisOrder"])
+    return [m["name"] for m in methods]
+
+
+def aggregate_metadata(method_metadata_files, service_name, datestamp, output_dir):
+    """Merge per-method test metadata JSON files into a single aggregated file.
+    
+    Args:
+        method_metadata_files: Dict mapping method_name -> metadata_file_path
+        service_name: Name of the service (e.g., "WSStore")
+        datestamp: Date string for file naming
+        output_dir: Output directory for the aggregated file
+        
+    Returns:
+        Path to the aggregated metadata JSON file
+    """
+    aggregated = {
+        "service": service_name,
+        "mode": "full-service",
+        "testClass": f"{service_name}ClientTest",
+        "methods": list(method_metadata_files.keys()),
+        "tests": []
+    }
+    
+    for method_name, metadata_file in method_metadata_files.items():
+        if not os.path.exists(metadata_file):
+            print(f"⚠️  Warning: Metadata file not found for method {method_name}: {metadata_file}")
+            continue
+        
+        try:
+            with open(metadata_file, 'r') as f:
+                method_metadata = json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"⚠️  Warning: Could not read metadata for {method_name}: {e}")
+            continue
+        
+        # Add "method" field to each test entry and merge into aggregated list
+        for test_entry in method_metadata.get("tests", []):
+            test_entry["method"] = method_name
+            aggregated["tests"].append(test_entry)
+    
+    aggregated_file = os.path.join(output_dir, f"{service_name}.TestMetadata_{datestamp}.json")
+    with open(aggregated_file, 'w') as f:
+        json.dump(aggregated, f, indent=2)
+    
+    print(f"✅ Aggregated metadata: {len(aggregated['tests'])} tests across {len(aggregated['methods'])} methods")
+    print(f"   Saved to: {aggregated_file}")
+    return aggregated_file
+
+
+# ============================================================
+# Full-Service Mode Orchestration
+# ============================================================
+
+if FULL_SERVICE_MODE:
+    print(f"\n{'='*60}")
+    print(f"🔄 FULL-SERVICE MODE: {SERVICE_NAME}")
+    print(f"{'='*60}")
+
+    # === Step 0: Service Discovery & Dependency Analysis ===
+    if START_FROM_STEP <= 0:
+        print("\n🔍 Step 0: Service Discovery & Dependency Analysis...")
+        SERVICE_ANALYSIS_FILE = os.path.join(OUTPUT_DIR, f"{SERVICE_NAME}.ServiceAnalysis_{DATESTAMP}.md")
+        METHOD_LIST_FILE = os.path.join(OUTPUT_DIR, f"{SERVICE_NAME}.MethodList_{DATESTAMP}.json")
+
+        copilot_generate(
+            SERVICE_ANALYSIS_PROMPT_FILE,
+            SERVICE_ANALYSIS_FILE,
+            {
+                "ServiceName": SERVICE_NAME,
+                "METHOD_LIST_FILE": os.path.abspath(METHOD_LIST_FILE),
+            }
+        )
+
+        if not os.path.exists(METHOD_LIST_FILE):
+            print(f"❌ Error: Method list JSON was not created at {METHOD_LIST_FILE}")
+            print("Step 0 must produce this file. Please re-run.")
+            sys.exit(1)
     else:
-        print("🔍 Step 1: Analyzing method using Copilot CLI...")
-        copilot_generate(PROMPT_FILE, ANALYSIS_FILE, {"ServiceName": SERVICE_NAME, "MethodName": METHOD_NAME})
-else:
-    print(f"⏭️  Skipping Step 1: Starting from Step {START_FROM_STEP}")
+        print(f"⏭️  Skipping Step 0: Starting from Step {START_FROM_STEP}")
+        SERVICE_ANALYSIS_FILE = os.path.join(OUTPUT_DIR, f"{SERVICE_NAME}.ServiceAnalysis_{DATESTAMP}.md")
+        METHOD_LIST_FILE = os.path.join(OUTPUT_DIR, f"{SERVICE_NAME}.MethodList_{DATESTAMP}.json")
 
-# === Step 2: Implement Tests from Analysis ===
-if START_FROM_STEP <= 2:
-    print("🧪 Step 2: Generating tests from analysis...")
-
-    # Check if analysis file exists before proceeding
-    if not os.path.exists(ANALYSIS_FILE):
-        print(f"❌ Error: Analysis file {ANALYSIS_FILE} was not created in Step 1.")
-        print("Please create the analysis file manually and re-run from Step 2, or restart the script.")
+    # Load the method list
+    try:
+        discovered_methods = load_method_list(METHOD_LIST_FILE)
+        print(f"✅ Loaded {len(discovered_methods)} methods from {METHOD_LIST_FILE}")
+        for i, m in enumerate(discovered_methods, 1):
+            print(f"   {i}. {m}")
+    except (FileNotFoundError, json.JSONDecodeError, KeyError) as e:
+        print(f"❌ Error: Could not load method list JSON: {e}")
+        print("Please ensure Step 0 completed successfully.")
         sys.exit(1)
 
-    with open(ANALYSIS_FILE) as f:
-        analysis_content = f.read()
+    # === Step 1: Per-Method Analysis (Looped) ===
+    method_analysis_files = {}
+    if START_FROM_STEP <= 1:
+        print(f"\n🔍 Step 1: Per-Method Analysis ({len(discovered_methods)} methods)...")
 
-    TEST_METADATA_FILE = os.path.join(OUTPUT_DIR, f"{SERVICE_NAME}.{METHOD_NAME}TestMetadata_{DATESTAMP}.json")
+        # Read service analysis content to pass as context
+        service_analysis_context = ""
+        if os.path.exists(SERVICE_ANALYSIS_FILE):
+            with open(SERVICE_ANALYSIS_FILE, 'r') as f:
+                service_analysis_context = f.read()
 
-    copilot_fix_from_template(
-        TEST_GENERATION_PROMPT_FILE,
-        [ANALYSIS_FILE],
-        {
-            "ANALYSIS_FILE": ANALYSIS_FILE,
-            "SERVICE_NAME": SERVICE_NAME,
-            "METHOD_NAME": METHOD_NAME,
-            "EXPECTED_RESULTS_FILE": EXPECTED_RESULTS_FILE,
-            "TEST_METADATA_FILE": TEST_METADATA_FILE,
-        },
-    )
-    
-    # Verify the metadata file was created
-    if not os.path.exists(TEST_METADATA_FILE):
-        print(f"⚠️  Warning: Test metadata file {TEST_METADATA_FILE} was not created.")
-        print(f"Creating a basic template...")
-        template = {
-            "service": SERVICE_NAME,
-            "method": METHOD_NAME,
-            "testClass": f"{SERVICE_NAME}ClientTest",
-            "tests": []
-        }
-        with open(TEST_METADATA_FILE, 'w') as f:
-            json.dump(template, f, indent=2)
-        print(f"✅ Created template file: {TEST_METADATA_FILE}")
-        print(f"⚠️  Please populate it with test information before proceeding to Step 4")
+        for method_idx, method_name in enumerate(discovered_methods, 1):
+            analysis_file = os.path.join(OUTPUT_DIR, f"{SERVICE_NAME}.{method_name}Analysis_{DATESTAMP}.md")
+            method_analysis_files[method_name] = analysis_file
+
+            if SKIP_ANALYSIS and os.path.exists(analysis_file):
+                print(f"⏭️  [{method_idx}/{len(discovered_methods)}] Skipping {method_name}: analysis file exists")
+                continue
+
+            print(f"\n📋 [{method_idx}/{len(discovered_methods)}] Analyzing method: {method_name}")
+            copilot_generate(
+                PROMPT_FILE,
+                analysis_file,
+                {"ServiceName": SERVICE_NAME, "MethodName": method_name}
+            )
+    else:
+        print(f"⏭️  Skipping Step 1: Starting from Step {START_FROM_STEP}")
+        # Build the expected file paths for downstream use
+        for method_name in discovered_methods:
+            method_analysis_files[method_name] = os.path.join(
+                OUTPUT_DIR, f"{SERVICE_NAME}.{method_name}Analysis_{DATESTAMP}.md"
+            )
+
+    # === Step 2: Per-Method Test Generation (Looped) ===
+    method_metadata_files = {}
+    if START_FROM_STEP <= 2:
+        print(f"\n🧪 Step 2: Per-Method Test Generation ({len(discovered_methods)} methods)...")
+
+        for method_idx, method_name in enumerate(discovered_methods, 1):
+            analysis_file = method_analysis_files.get(method_name)
+            if not analysis_file or not os.path.exists(analysis_file):
+                print(f"⚠️  [{method_idx}/{len(discovered_methods)}] Skipping {method_name}: analysis file not found")
+                continue
+
+            print(f"\n📋 [{method_idx}/{len(discovered_methods)}] Generating tests for: {method_name}")
+
+            per_method_metadata_file = os.path.join(
+                OUTPUT_DIR, f"{SERVICE_NAME}.{method_name}TestMetadata_{DATESTAMP}.json"
+            )
+            per_method_expected_results = os.path.join(
+                OUTPUT_DIR, f"{SERVICE_NAME}.{method_name}ExpectedTestResults_{DATESTAMP}.md"
+            )
+            method_metadata_files[method_name] = per_method_metadata_file
+
+            # Build context files list — include service analysis if available
+            context_files = [analysis_file]
+            if os.path.exists(SERVICE_ANALYSIS_FILE):
+                context_files.append(SERVICE_ANALYSIS_FILE)
+
+            copilot_fix_from_template(
+                TEST_GENERATION_PROMPT_FILE,
+                context_files,
+                {
+                    "ANALYSIS_FILE": analysis_file,
+                    "SERVICE_NAME": SERVICE_NAME,
+                    "METHOD_NAME": method_name,
+                    "EXPECTED_RESULTS_FILE": per_method_expected_results,
+                    "TEST_METADATA_FILE": per_method_metadata_file,
+                    "SERVICE_ANALYSIS_FILE": SERVICE_ANALYSIS_FILE,
+                },
+            )
+
+            # Verify metadata file was created
+            if not os.path.exists(per_method_metadata_file):
+                print(f"⚠️  Warning: Test metadata file not created for {method_name}.")
+                print(f"   Creating template at: {per_method_metadata_file}")
+                template = {
+                    "service": SERVICE_NAME,
+                    "method": method_name,
+                    "testClass": f"{SERVICE_NAME}ClientTest",
+                    "tests": []
+                }
+                with open(per_method_metadata_file, 'w') as f:
+                    json.dump(template, f, indent=2)
+    else:
+        print(f"⏭️  Skipping Step 2: Starting from Step {START_FROM_STEP}")
+        for method_name in discovered_methods:
+            method_metadata_files[method_name] = os.path.join(
+                OUTPUT_DIR, f"{SERVICE_NAME}.{method_name}TestMetadata_{DATESTAMP}.json"
+            )
+
+    # Aggregate all per-method metadata into one file
+    TEST_METADATA_FILE = aggregate_metadata(method_metadata_files, SERVICE_NAME, DATESTAMP, OUTPUT_DIR)
+
+    # Update global variables used by Steps 3 & 4
+    ANALYSIS_FILE = SERVICE_ANALYSIS_FILE  # Use service analysis for build-fix context
+    EXPECTED_RESULTS_FILE = os.path.join(OUTPUT_DIR, f"{SERVICE_NAME}.AllMethodsExpectedTestResults_{DATESTAMP}.md")
+    FAILURE_ANALYSIS_FILE = os.path.join(OUTPUT_DIR, f"{SERVICE_NAME}.FailureAnalysis_{DATESTAMP}.md")
+
+    # Fall through to Steps 3 & 4 below (shared with single-method mode)
+
 else:
-    print(f"⏭️  Skipping Step 2: Starting from Step {START_FROM_STEP}")
-    TEST_METADATA_FILE = os.path.join(OUTPUT_DIR, f"{SERVICE_NAME}.{METHOD_NAME}TestMetadata_{DATESTAMP}.json")
+    # ============================================================
+    # Single-Method Mode (Original Flow)
+    # ============================================================
+
+    # === Step 1: Generate Method Analysis ===
+    if START_FROM_STEP <= 1:
+        if SKIP_ANALYSIS and os.path.exists(ANALYSIS_FILE):
+            print(f"⏭️  Skipping Step 1: Analysis file {ANALYSIS_FILE} already exists")
+        else:
+            print("🔍 Step 1: Analyzing method using Copilot CLI...")
+            copilot_generate(PROMPT_FILE, ANALYSIS_FILE, {"ServiceName": SERVICE_NAME, "MethodName": METHOD_NAME})
+    else:
+        print(f"⏭️  Skipping Step 1: Starting from Step {START_FROM_STEP}")
+
+    # === Step 2: Implement Tests from Analysis ===
+    if START_FROM_STEP <= 2:
+        print("🧪 Step 2: Generating tests from analysis...")
+
+        # Check if analysis file exists before proceeding
+        if not os.path.exists(ANALYSIS_FILE):
+            print(f"❌ Error: Analysis file {ANALYSIS_FILE} was not created in Step 1.")
+            print("Please create the analysis file manually and re-run from Step 2, or restart the script.")
+            sys.exit(1)
+
+        with open(ANALYSIS_FILE) as f:
+            analysis_content = f.read()
+
+        TEST_METADATA_FILE = os.path.join(OUTPUT_DIR, f"{SERVICE_NAME}.{METHOD_NAME}TestMetadata_{DATESTAMP}.json")
+
+        copilot_fix_from_template(
+            TEST_GENERATION_PROMPT_FILE,
+            [ANALYSIS_FILE],
+            {
+                "ANALYSIS_FILE": ANALYSIS_FILE,
+                "SERVICE_NAME": SERVICE_NAME,
+                "METHOD_NAME": METHOD_NAME,
+                "EXPECTED_RESULTS_FILE": EXPECTED_RESULTS_FILE,
+                "TEST_METADATA_FILE": TEST_METADATA_FILE,
+                "SERVICE_ANALYSIS_FILE": "",
+            },
+        )
+
+        # Verify the metadata file was created
+        if not os.path.exists(TEST_METADATA_FILE):
+            print(f"⚠️  Warning: Test metadata file {TEST_METADATA_FILE} was not created.")
+            print(f"Creating a basic template...")
+            template = {
+                "service": SERVICE_NAME,
+                "method": METHOD_NAME,
+                "testClass": f"{SERVICE_NAME}ClientTest",
+                "tests": []
+            }
+            with open(TEST_METADATA_FILE, 'w') as f:
+                json.dump(template, f, indent=2)
+            print(f"✅ Created template file: {TEST_METADATA_FILE}")
+            print(f"⚠️  Please populate it with test information before proceeding to Step 4")
+    else:
+        print(f"⏭️  Skipping Step 2: Starting from Step {START_FROM_STEP}")
+        TEST_METADATA_FILE = os.path.join(OUTPUT_DIR, f"{SERVICE_NAME}.{METHOD_NAME}TestMetadata_{DATESTAMP}.json")
 
 # === Step 3: Build Project and Fix Compilation Issues ===
 if START_FROM_STEP <= 3:
@@ -658,7 +943,10 @@ if START_FROM_STEP <= 4:
     print(f"📋 Maximum iterations: {MAX_TEST_FIX_ITERATIONS}")
 
     # Load test metadata
-    TEST_METADATA_FILE = os.path.join(OUTPUT_DIR, f"{SERVICE_NAME}.{METHOD_NAME}TestMetadata_{DATESTAMP}.json")
+    # In full-service mode, TEST_METADATA_FILE is already set by aggregate_metadata()
+    # In single-method mode, it was set in Step 2 — but if starting from step 4 directly, derive it
+    if not FULL_SERVICE_MODE:
+        TEST_METADATA_FILE = os.path.join(OUTPUT_DIR, f"{SERVICE_NAME}.{METHOD_NAME}TestMetadata_{DATESTAMP}.json")
     test_metadata = load_test_metadata(TEST_METADATA_FILE)
     
     if not test_metadata:
@@ -960,9 +1248,16 @@ if START_FROM_STEP <= 4:
 
     print("\n🎉 Test analysis and categorization complete!")
     print(f"\n📁 Generated Files in {OUTPUT_DIR}:")
-    print(f"   - {os.path.basename(ANALYSIS_FILE)}")
-    print(f"   - {os.path.basename(EXPECTED_RESULTS_FILE)}")
-    print(f"   - {SERVICE_NAME}.{METHOD_NAME}TestMetadata_{DATESTAMP}.json")
+    if FULL_SERVICE_MODE:
+        print(f"   - {SERVICE_NAME}.ServiceAnalysis_{DATESTAMP}.md")
+        print(f"   - {SERVICE_NAME}.MethodList_{DATESTAMP}.json")
+        print(f"   - {SERVICE_NAME}.<method>Analysis_{DATESTAMP}.md (per method)")
+        print(f"   - {SERVICE_NAME}.<method>TestMetadata_{DATESTAMP}.json (per method)")
+        print(f"   - {SERVICE_NAME}.TestMetadata_{DATESTAMP}.json (aggregated)")
+    else:
+        print(f"   - {os.path.basename(ANALYSIS_FILE)}")
+        print(f"   - {os.path.basename(EXPECTED_RESULTS_FILE)}")
+        print(f"   - {SERVICE_NAME}.{METHOD_NAME}TestMetadata_{DATESTAMP}.json")
     print(f"   - {os.path.basename(FAILURE_ANALYSIS_FILE)}")
     print(f"   - {SERVICE_NAME}.{METHOD_NAME}FinalReport_{DATESTAMP}.md")
     if 'server_issue_tests' in locals() and server_issue_tests:

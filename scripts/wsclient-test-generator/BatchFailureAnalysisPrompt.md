@@ -2,6 +2,35 @@
 
 Please analyze all test failures in ${FAILURE_REPORT_FILE} and determine the appropriate actions.
 
+## 🔍 File Search Strategy
+
+> ⚠️ **Important**: File and directory names may differ in capitalisation or have minor naming differences from what is expected. **Always use fuzzy/case-insensitive searches** — never assume an exact path is correct.
+>
+> ⚠️ **Always search from the project root directories provided in the context above** (HPCC4J Project Root and HPCC Platform Source Root). Do NOT use `.` as a search root — the script may be run from a different directory and `.` will not be the project root.
+
+**When locating the test file or any other source file:**
+
+1. **Use `find -iname` from the HPCC4J project root** (case-insensitive), not from `.`:
+   ```bash
+   find <HPCC4J_PROJECT_ROOT>/wsclient/src/test -iname "*ClientTest.java" -type f
+   # If the exact path in ${TEST_FILE_PATH} doesn't exist, search broadly:
+   find <HPCC4J_PROJECT_ROOT>/wsclient/src -iname "*Test*.java" -path "*/test/*"
+   ```
+
+2. **Try multiple name variants** if the first search returns nothing:
+   - With and without the `Ws`/`WS` prefix (e.g., `WsStore` → `Store`, `store`)
+   - All-lowercase, PascalCase, camelCase variants
+   - Partial name globs (e.g., `*store*test*`, `*Store*Test*`)
+
+3. **Use `grep -ril` from the project root** when a name-based search fails:
+   ```bash
+   grep -ril "class.*ClientTest" <HPCC4J_PROJECT_ROOT>/wsclient/src --include="*.java"
+   ```
+
+4. **Never give up after one failed search** — try at least 3 different variants/strategies before treating a file as missing.
+
+---
+
 ## Your Task
 
 Review each failed test and categorize them into:

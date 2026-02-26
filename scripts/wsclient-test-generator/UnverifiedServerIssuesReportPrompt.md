@@ -2,6 +2,38 @@ Create a separate report for **Unverified Server Issues** found while testing ${
 
 This report must be generated **only** when there are tests categorized with `@Category(UnverifiedServerIssues.class)`.
 
+## 🔍 File Search Strategy
+
+> ⚠️ **Important**: File and directory names may differ in capitalisation or have minor naming differences from what is expected. **Always use fuzzy/case-insensitive searches** — never assume an exact path is correct.
+>
+> ⚠️ **Always search from the project root directories provided in the context above** (HPCC4J Project Root and HPCC Platform Source Root). Do NOT use `.` as a search root — the script may be run from a different directory and `.` will not be the project root.
+
+**When locating the test file, failure reports, or HPCC Platform source files:**
+
+1. **Use `find -iname` from the project root** (case-insensitive), not from `.`:
+   ```bash
+   # Failure reports and artifacts — search from HPCC4J project root
+   find <HPCC4J_PROJECT_ROOT> -iname "*FailureReport*" -type f
+
+   # HPCC Platform source — search from HPCC Platform source root
+   find ${HPCC_SOURCE_DIR}/esp -iname "*.ecm" | xargs grep -il "${SERVICE_NAME}"
+   find ${HPCC_SOURCE_DIR}/esp/services -maxdepth 1 -iname "*${SERVICE_NAME}*" -type d
+   ```
+
+2. **Try multiple name variants** if the first search returns nothing:
+   - With and without the `Ws`/`WS` prefix (e.g., `WsStore` → `Store`, `store`, `ws_store`)
+   - All-lowercase, PascalCase, camelCase variants
+   - Partial name globs (e.g., `*store*`, `*Store*`)
+
+3. **Use `grep -ril` from the project root** when a name-based search fails:
+   ```bash
+   grep -ril "${SERVICE_NAME}" ${HPCC_SOURCE_DIR}/esp --include="*.cpp" --include="*.ecm"
+   ```
+
+4. **Never give up after one failed search** — try at least 3 different variants/strategies before treating a file as missing.
+
+---
+
 ## Inputs
 
 - Service: `${SERVICE_NAME}`

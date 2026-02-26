@@ -53,6 +53,45 @@ The goal is to:
 - Service implementations are defined in: `esp/services/ws_${ServiceName}`
 - Request and response object definitions (IDL) are in: `esp/scm/ws_${ServiceName}.ecm`
 
+## 🔍 File Search Strategy
+
+> ⚠️ **Important**: File and directory names may differ in capitalisation or have minor naming differences from what is expected. **Always use fuzzy/case-insensitive searches** — never assume an exact path is correct.
+>
+> ⚠️ **Always search from the project root directories provided in the context above** (HPCC4J Project Root and HPCC Platform Source Root). Do NOT use `.` as a search root — the script may be run from a different directory and `.` will not be the project root.
+
+**Required approach when locating any file:**
+
+1. **Use `find -iname` from the project root** (case-insensitive), not from `.`:
+   ```bash
+   # Java client / test files — search from HPCC4J project root
+   find <HPCC4J_PROJECT_ROOT> -iname "*${ServiceName}*" -type f
+   find <HPCC4J_PROJECT_ROOT>/wsclient/src -iname "*${ServiceName}ClientTest*"
+
+   # HPCC Platform source files — search from HPCC Platform source root
+   find <HPCC_PLATFORM_SOURCE_ROOT>/esp -iname "*${ServiceName}*" -type f
+   ```
+
+2. **Try multiple name variants** if the first search returns nothing:
+   - With and without the `Ws`/`WS` prefix (e.g., `WsStore` → `Store`, `store`)
+   - All-lowercase, PascalCase, camelCase variants
+   - Partial name globs (e.g., `*store*client*`, `*Store*`)
+   - Underscore vs. no-separator variants (e.g., `ws_store` vs `wsstore`)
+
+3. **Use `grep -ril` from the project root** when a name-based search fails:
+   ```bash
+   grep -ril "class HPCC.*StoreClient" <HPCC4J_PROJECT_ROOT>/wsclient/src
+   grep -ril "ServiceName" <HPCC_PLATFORM_SOURCE_ROOT>/esp --include="*.ecm"
+   ```
+
+4. **Try the full source tree** before concluding a file does not exist:
+   ```bash
+   find <HPCC_PLATFORM_SOURCE_ROOT> -iname "*.ecm" | xargs grep -il "${ServiceName}"
+   ```
+
+5. **Never give up after one failed search** — try at least 3 different variants/strategies before treating a file as missing.
+
+---
+
 ## 🧪 Testing Guidelines
 
 ### Test Location
