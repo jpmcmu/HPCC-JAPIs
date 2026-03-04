@@ -111,6 +111,7 @@ Test cases should fully cover:
 - Invalid inputs and expected error responses  
 - Exceptional conditions or failure scenarios
 
+${TESTING_SCENARIOS_SECTION}
 ## 🧠 Task Instructions
 
 You will be provided a method that lacks test coverage or has insufficient coverage.
@@ -303,7 +304,31 @@ Rationale: Existing datasets don't contain null values, which are critical for t
 
 #### 8. New Dataset Specifications
 
-If any test cases require new datasets, consolidate all requirements here with complete ECL code snippets for dataset generation.
+If any test cases require new datasets, consolidate all requirements here AND provide the ECL code that must be added to `generate-datasets.ecl`.
+
+> ⚠️ **CRITICAL**: New datasets are created by adding ECL code to:
+> `wsclient/src/test/resources/generate-datasets.ecl`
+>
+> This file is submitted to the HPCC cluster automatically before every test run via `BaseRemoteTest.initialize()`. Any dataset NOT defined here will not exist when tests run, causing test failures.
+
+For each new dataset, provide a complete ECL block following the **existing `IF(~Std.File.FileExists(...))` idempotent pattern** already used in the file. Example:
+
+```ecl
+// --- New dataset for ${ServiceName} ${MethodName} tests ---
+dataset_name_new := '~test::${purpose}::${type}';
+rec_new := { STRING path, INTEGER4 depth };
+ds_new := DATASET(500, TRANSFORM(rec_new,
+    SELF.path := '/test/' + (STRING)(COUNTER);
+    SELF.depth := COUNTER % 10;
+), DISTRIBUTED);
+IF(~Std.File.FileExists(dataset_name_new), OUTPUT(ds_new,,dataset_name_new,overwrite));
+```
+
+**Required for each new dataset:**
+- Dataset name following convention: `~test::${purpose}::${type}`
+- Complete ECL RECORD definition and DATASET/TRANSFORM
+- The `IF(~Std.File.FileExists(...), OUTPUT(...,overwrite))` guard
+- A comment identifying which test IDs require this dataset
 
 ### Step 3 — Review Available Test Datasets
 

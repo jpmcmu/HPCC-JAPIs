@@ -27,6 +27,52 @@
 
 ---
 
+${TESTING_SCENARIOS_SECTION}
+## 🗄️ Dataset Generation — REQUIRED BEFORE WRITING TESTS
+
+> ⚠️ **CRITICAL**: Test datasets are created by submitting `wsclient/src/test/resources/generate-datasets.ecl` to the HPCC cluster via `BaseRemoteTest.initialize()` before each test run. Any dataset a test references **must** be defined in this file or it will not exist at test time.
+
+**Perform these steps IN ORDER before writing any test code:**
+
+### Step D1 — Read the existing dataset file
+
+```bash
+cat <HPCC4J_PROJECT_ROOT>/wsclient/src/test/resources/generate-datasets.ecl
+```
+
+Note every dataset name already defined (the `dataset_name := '~...'` assignments). These are available for use immediately — do NOT recreate them.
+
+### Step D2 — Determine which datasets each test case needs
+
+For each test case in the analysis file:
+1. Check if an existing dataset (from Step D1) is sufficient
+2. If not, design the minimal new dataset that satisfies the test requirement
+
+### Step D3 — Append new datasets to `generate-datasets.ecl`
+
+For every new dataset identified in Step D2, **append an ECL block to the file** using the same idempotent pattern already used in the file:
+
+```ecl
+// --- New dataset added for ${SERVICE_NAME} ${METHOD_NAME} tests ---
+dataset_name_X := '~test::purpose::type';
+rec_X := { /* field definitions */ };
+ds_X := DATASET(N, TRANSFORM(rec_X, SELF.field := ...; ), DISTRIBUTED);
+IF(~Std.File.FileExists(dataset_name_X), OUTPUT(ds_X,,dataset_name_X,overwrite));
+```
+
+Rules:
+- **Always use the `IF(~Std.File.FileExists(...), OUTPUT(...,overwrite))` guard** — this makes the script idempotent (safe to re-run)
+- Follow the naming convention `~test::<purpose>::<type>` for new datasets
+- Add a comment above each new block identifying which tests need it
+- Do NOT modify or remove any existing blocks in the file
+- Append at the end of the file
+
+### Step D4 — Record dataset names in test code
+
+Use the exact dataset names (including `~` prefix and `::` separators) from both the existing and newly added blocks as the file path arguments in your Java test calls.
+
+---
+
 Read ${ANALYSIS_FILE} and implement the recommended test cases 
 for ${SERVICE_NAME}.${METHOD_NAME}. Create ${EXPECTED_RESULTS_FILE} 
 with the expected results for each test.

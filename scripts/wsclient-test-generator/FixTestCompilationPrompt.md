@@ -65,3 +65,24 @@
 5. Run Maven again to verify — repeat if further errors remain
 
 Fix compilation errors ONLY in the test files. Do not modify production source files.
+
+---
+
+## ⚠️ Fix Guidelines — CRITICAL
+
+### 1. Preserve Existing Behavior
+
+- **Do NOT change existing test behavior** unless it is demonstrably incorrect (e.g., calling the wrong API, structurally broken logic) or the compilation error cannot be fixed any other way.
+- Cosmetic or convenience changes — renaming variables, reformatting code, simplifying logic, changing assertion style — are **not acceptable** unless they are strictly required to resolve the error.
+- If in doubt, keep the original intent of the test code intact and change only the minimum necessary.
+
+### 2. Capture Silent Errors via Log4j
+
+- If, after fixing compilation, a test failure appears to be due to a silently handled error (no exception thrown), consider **attaching a Log4j test appender** to capture log output and surface the root cause.
+- Use a `ListAppender` or custom `AbstractAppender` from `log4j-core`. Only add this when necessary — do not add log-capturing code speculatively.
+
+### 3. Apply Defensive Checks Consistently
+
+- When fixing an error by adding a defensive check (e.g., a null-check on a stub or response object), **scan all other methods in the same file** for the same vulnerable pattern.
+- Apply the same fix consistently across all affected locations — do not leave other methods in a broken or inconsistent state.
+- Example: If you add `if (stub == null) return;` to fix `methodA()`, check every other method in the file for the same missing guard and patch them as well.

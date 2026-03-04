@@ -24,6 +24,10 @@ Arguments:
                        Can be relative (e.g., ../HPCC-Platform) or absolute
                        The script will convert it to an absolute path
     --model, -m        AI model to use for Copilot CLI (e.g., claude-sonnet-4, gpt-4o)
+    --scenarios        Comma-separated list of specific testing scenarios to focus on.
+                       If omitted, the script will prompt interactively at startup.
+                       Pass an empty string or 'none' to skip scenario input.
+                       Example: --scenarios "invalid credentials, empty input, large result sets"
 
 The script will:
 1. Generate a method analysis using the MethodAnalysisPrompt.md template
@@ -100,6 +104,13 @@ def parse_arguments():
                         default=0,
                         help="Start from a specific step (0=Service Discovery [full-service only], "
                              "1=Analysis, 2=Test Generation, 3=Build, 4=Test Execution)")
+    parser.add_argument("--scenarios",
+                        dest="TESTING_SCENARIOS",
+                        default=None,
+                        help="Specific testing scenarios to focus on (comma-separated). "
+                             "If not provided, you will be prompted interactively at startup. "
+                             "Pass an empty string or 'none' to skip scenario input entirely. "
+                             "Example: --scenarios \"invalid credentials, empty input, large result sets\"")
     return parser.parse_args()
 
 args = parse_arguments()
@@ -110,6 +121,37 @@ COPILOT_MODEL = args.COPILOT_MODEL
 HPCC_SOURCE_DIR = os.path.abspath(args.HPCC_SOURCE_DIR)  # Convert to absolute path
 SKIP_ANALYSIS = args.skip_analysis
 START_FROM_STEP = args.start_from_step
+
+# Determine testing scenarios (from CLI arg or interactive prompt)
+if args.TESTING_SCENARIOS is not None:
+    TESTING_SCENARIOS = args.TESTING_SCENARIOS.strip()
+    if TESTING_SCENARIOS.lower() == 'none':
+        TESTING_SCENARIOS = ""
+else:
+    print("\n🎯 Specific Testing Scenarios")
+    print("   Enter comma-separated scenarios to focus test generation on.")
+    print("   Example: invalid credentials, empty input, large result sets, concurrent access")
+    print("   Press Enter to skip and use default scenario coverage.")
+    _user_scenarios = input("   Scenarios: ").strip()
+    TESTING_SCENARIOS = _user_scenarios
+
+if TESTING_SCENARIOS:
+    print(f"🎯 Testing scenarios: {TESTING_SCENARIOS}")
+    _scenarios_list = "\n".join(
+        f"- {s.strip()}" for s in TESTING_SCENARIOS.split(",") if s.strip()
+    )
+    TESTING_SCENARIOS_SECTION = (
+        f"\n## 🎯 Requested Testing Scenarios\n\n"
+        f"> ⚠️ The following specific scenarios have been explicitly requested and "
+        f"**must** be included in the analysis and test case plan. "
+        f"These take priority over standard gap analysis.\n\n"
+        f"{_scenarios_list}\n\n"
+        f"Ensure each of the above scenarios has at least one dedicated test case, "
+        f"even if a similar scenario is already covered by existing tests.\n"
+    )
+else:
+    print("🎯 No specific scenarios requested — using default coverage")
+    TESTING_SCENARIOS_SECTION = ""
 
 # Compute the ESP service name: strip leading Ws/WS prefix (case-insensitive) and lowercase.
 # e.g., WsDFU -> dfu, WSStore -> store, WsWorkunits -> workunits
@@ -760,7 +802,11 @@ if FULL_SERVICE_MODE:
             copilot_generate(
                 PROMPT_FILE,
                 analysis_file,
-                {"ServiceName": SERVICE_NAME, "MethodName": method_name}
+                {
+                    "ServiceName": SERVICE_NAME,
+                    "MethodName": method_name,
+                    "TESTING_SCENARIOS_SECTION": TESTING_SCENARIOS_SECTION,
+                }
             )
     else:
         print(f"⏭️  Skipping Step 1: Starting from Step {START_FROM_STEP}")
@@ -806,6 +852,7 @@ if FULL_SERVICE_MODE:
                     "EXPECTED_RESULTS_FILE": per_method_expected_results,
                     "TEST_METADATA_FILE": per_method_metadata_file,
                     "SERVICE_ANALYSIS_FILE": SERVICE_ANALYSIS_FILE,
+                    "TESTING_SCENARIOS_SECTION": TESTING_SCENARIOS_SECTION,
                 },
             )
 
@@ -849,7 +896,15 @@ else:
             print(f"⏭️  Skipping Step 1: Analysis file {ANALYSIS_FILE} already exists")
         else:
             print("🔍 Step 1: Analyzing method using Copilot CLI...")
-            copilot_generate(PROMPT_FILE, ANALYSIS_FILE, {"ServiceName": SERVICE_NAME, "MethodName": METHOD_NAME})
+            copilot_generate(
+                PROMPT_FILE,
+                ANALYSIS_FILE,
+                {
+                    "ServiceName": SERVICE_NAME,
+                    "MethodName": METHOD_NAME,
+                    "TESTING_SCENARIOS_SECTION": TESTING_SCENARIOS_SECTION,
+                }
+            )
     else:
         print(f"⏭️  Skipping Step 1: Starting from Step {START_FROM_STEP}")
 
@@ -878,6 +933,7 @@ else:
                 "EXPECTED_RESULTS_FILE": EXPECTED_RESULTS_FILE,
                 "TEST_METADATA_FILE": TEST_METADATA_FILE,
                 "SERVICE_ANALYSIS_FILE": "",
+                "TESTING_SCENARIOS_SECTION": TESTING_SCENARIOS_SECTION,
             },
         )
 
