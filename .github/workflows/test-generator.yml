@@ -10,8 +10,17 @@ name: WsClient Test Generator Suite
 #     Run TestGeneratorAgent.py locally (steps 0–3) first, commit the resulting
 #     *ClientTest.java, then trigger this workflow.
 #
+# Access control (REQUIRED SETUP — repo admin):
+#   • Create a GitHub Environment named "test-runner" in repo Settings →
+#     Environments. Add required reviewers (only they can approve runs).
+#     This prevents unauthorized workflow_dispatch invocations.
+#   • Optionally set the ALLOWED_ACTORS secret (comma-separated GitHub usernames)
+#     for an additional actor allowlist check enforced in the workflow itself.
+#
 # Outputs:
-#   • Test results and failure reports uploaded as workflow artifacts per job.
+#   • All result files committed to a new branch:
+#       test-results/<SERVICE_NAME>/<YYYYMMDD>-<run_id>
+#     with sub-directories: containerized/, baremetal/, secure/
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
@@ -48,6 +57,13 @@ on:
         type: string
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Permissions: contents:write is required to push the results branch.
+# ─────────────────────────────────────────────────────────────────────────────
+permissions:
+  contents: write
+  pull-requests: write
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Jobs
 # ─────────────────────────────────────────────────────────────────────────────
 jobs:
@@ -58,8 +74,27 @@ jobs:
   build:
     name: Build project
     runs-on: ubuntu-latest
+    # ── ACCESS GATE ────────────────────────────────────────────────────────────
+    # References the "test-runner" Environment.  Configure required reviewers
+    # in repo Settings → Environments → test-runner.  The workflow will pause
+    # here until an approved reviewer clicks "Approve and deploy".
+    environment: test-runner
 
     steps:
+      - name: Check actor authorization
+        # Belt-and-suspenders: also verify actor against the ALLOWED_ACTORS
+        # secret (comma-separated usernames, e.g. "alice,bob").  If the secret
+        # is absent every actor is permitted (Environment gate is the primary
+        # control).  Set this secret in repo Settings → Secrets → Actions.
+        if: ${{ secrets.ALLOWED_ACTORS != '' }}
+        run: |
+          if ! echo "${{ secrets.ALLOWED_ACTORS }}" | tr ',' '\n' | grep -qx "${{ github.actor }}"; then
+            echo "::error::Actor '${{ github.actor }}' is not in the ALLOWED_ACTORS list."
+            echo "Add '${{ github.actor }}' to the ALLOWED_ACTORS repository secret to grant access."
+            exit 1
+          fi
+          echo "Actor '${{ github.actor }}' is authorized."
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
@@ -206,11 +241,13 @@ jobs:
             kubectl logs -l app=$svc --namespace default > test-logs/containerized/${svc}.log 2>&1 || true
           done
 
-      - name: Upload test artifacts
+      # Internal ephemeral artifact — consumed only by publish-results job.
+      - name: Stage results for publish job
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-results-containerized
+          retention-days: 1
           path: |
             **/*TestResults_Iteration*.json
             **/*FinalReport_*.md
@@ -349,11 +386,13 @@ jobs:
 
           python3 scripts/wsclient-test-generator/TestGeneratorAgent.py $ARGS
 
-      - name: Upload test artifacts
+      # Internal ephemeral artifact — consumed only by publish-results job.
+      - name: Stage results for publish job
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-results-baremetal
+          retention-days: 1
           path: |
             **/*TestResults_Iteration*.json
             **/*FinalReport_*.md
@@ -538,14 +577,98 @@ jobs:
 
           python3 scripts/wsclient-test-generator/TestGeneratorAgent.py $ARGS
 
-      - name: Upload test artifacts
+      # Internal ephemeral artifact — consumed only by publish-results job.
+      - name: Stage results for publish job
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-results-secure
+          retention-days: 1
           path: |
             **/*TestResults_Iteration*.json
             **/*FinalReport_*.md
             **/*FailureReport_*.md
             **/*BatchAnalysis_*.md
             **/*ServerIssue_*.md
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Job 5: Publish results — commit all test output to a new feature branch
+  # ───────────────────────────────────────────────────────────────────────────
+  publish-results:
+    name: Publish results to branch
+    # Run even when test jobs fail so partial results are always committed.
+    if: always()
+    needs: [test-containerized, test-baremetal, test-secure]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # Use GITHUB_TOKEN — no PAT required.  The token already has
+          # contents:write because of the top-level permissions block.
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download containerized results
+        uses: actions/download-artifact@v4
+        with:
+          name: test-results-containerized
+          path: test-results/containerized/
+        # Tolerate missing artifact when the job was skipped/cancelled.
+        continue-on-error: true
+
+      - name: Download baremetal results
+        uses: actions/download-artifact@v4
+        with:
+          name: test-results-baremetal
+          path: test-results/baremetal/
+        continue-on-error: true
+
+      - name: Download secure results
+        uses: actions/download-artifact@v4
+        with:
+          name: test-results-secure
+          path: test-results/secure/
+        continue-on-error: true
+
+      - name: Commit and push results branch
+        id: push_branch
+        env:
+          SERVICE_NAME: ${{ github.event.inputs.service_name }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_NUMBER: ${{ github.run_number }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          DATESTAMP=$(date +%Y%m%d)
+          BRANCH="test-results/${SERVICE_NAME}/${DATESTAMP}-${RUN_ID}"
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Create the results branch off the current HEAD so it contains the
+          # test class source that was used during this run.
+          git checkout -b "$BRANCH"
+
+          # Stage everything under test-results/
+          git add test-results/ 2>/dev/null || true
+
+          if git diff --cached --quiet; then
+            echo "No result files found — nothing to commit."
+            echo "branch_created=false" >> $GITHUB_OUTPUT
+          else
+            COMMIT_MSG="test-results: ${SERVICE_NAME} run #${RUN_NUMBER} (${RUN_ID}) by ${ACTOR}"
+            git commit -m "$COMMIT_MSG"
+            git push origin "$BRANCH"
+            echo "branch_created=true"  >> $GITHUB_OUTPUT
+            echo "branch_name=$BRANCH"  >> $GITHUB_OUTPUT
+            echo "✅ Results committed to branch: $BRANCH"
+          fi
+
+      - name: Print results branch URL
+        if: steps.push_branch.outputs.branch_created == 'true'
+        run: |
+          REPO="${{ github.server_url }}/${{ github.repository }}"
+          BRANCH="${{ steps.push_branch.outputs.branch_name }}"
+          echo "Results branch: ${REPO}/tree/${BRANCH}"
+          echo "Compare / PR:   ${REPO}/compare/${BRANCH}"
