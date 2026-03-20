@@ -74,6 +74,10 @@ jobs:
   build:
     name: Build project
     runs-on: ubuntu-latest
+    # Guard: only run on forks, never on the canonical upstream repo.
+    # Any fork will have a different github.repository value, so this
+    # condition is both portable and explicit.
+    if: github.repository != 'hpcc-systems/hpcc4j'
     # ── ACCESS GATE ────────────────────────────────────────────────────────────
     # References the "test-runner" Environment.  Configure required reviewers
     # in repo Settings → Environments → test-runner.  The workflow will pause
@@ -597,7 +601,9 @@ jobs:
   publish-results:
     name: Publish results to branch
     # Run even when test jobs fail so partial results are always committed.
-    if: always()
+    # The repo guard is repeated here because `always()` bypasses the `needs`
+    # gate that would otherwise propagate the fork check from `build`.
+    if: always() && github.repository != 'hpcc-systems/hpcc4j'
     needs: [test-containerized, test-baremetal, test-secure]
     runs-on: ubuntu-latest
 
