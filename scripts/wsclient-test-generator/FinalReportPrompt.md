@@ -32,33 +32,51 @@ Create a final comprehensive test report for ${SERVICE_NAME}.${METHOD_NAME} that
    - Final test status: ${FINAL_PASSED} passed, ${FINAL_FAILED} failed
    - Test metadata file: ${TEST_METADATA_FILE}
    - Latest results file: ${LATEST_RESULTS_FILE}
+   - **Total lines of Java test code generated** (count all non-blank, non-comment lines in the
+     generated test class)
 
-2. **Issue Categories**
+2. **Test Category Breakdown**
+   - Count tests per category: CFT, ECT, EHT, CNT
+   - Environment requirements matrix: which environments each test targets
+
+3. **Server Issues Identified**
+   For each distinct server-side issue found (tests annotated `@Category(UnverifiedServerIssues.class)`):
+   - **Issue title** (1 sentence)
+   - **Affected test(s)**: list of test method names
+   - **Symptom**: exact error/exception observed
+   - **Likely cause**: hypothesis for the root cause in the server implementation
+   - **Suggested server-side fix**: brief description
+
+4. **Client Issues Fixed**
+   For each client-side fix applied during the test-fix iterations:
+   - **Fix description**: what was wrong and how it was corrected
+   - **Affected test(s)**: list of test method names
+   - **Fix type**: test logic / API usage / data setup / compilation
+
+5. **Issue Categories**
    - List all tests with @Category(UnverifiedClientIssues.class)
    - List all tests with @Category(UnverifiedServerIssues.class)
-   - List all fixed tests
+   - List all tests that were fixed and now pass
 
-3. **Detailed Findings**
-   - Client-side issues discovered
-   - Server-side issues discovered
+6. **Detailed Findings**
+   - Client-side issues discovered and resolved
+   - Server-side issues discovered (unresolved)
    - Test case problems corrected
 
-4. **Individual Test Results**
+7. **Individual Test Results**
    For each test, include:
-   - Test name and category
+   - Test name, label (CFT-001-MethodName), and category
    - Pass/Fail status
+   - Required environments
    - Description and expected outcome
    - Any issues or notes
 
-5. **Client side Fixes**
-    - Summary of fixes made to the Java client code
-
-6. **Recommendations**
+8. **Recommendations**
    - Priority items for client-side fixes
    - Priority items for server-side fixes
    - Test coverage improvements
 
-7. **Next Steps**
+9. **Next Steps**
    - Actions required before merging
    - Items requiring manual investigation
    - Follow-up work needed

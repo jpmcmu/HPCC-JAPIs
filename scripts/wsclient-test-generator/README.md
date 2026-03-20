@@ -24,6 +24,13 @@ The agent supports two modes:
 - 🎯 **Intelligent Categorization**: Automatically classifies failures as client-side, server-side, or invalid tests
 - 🔒 **Strict Security**: Whitelisted tool execution prevents unauthorized commands
 - 📝 **Comprehensive Reporting**: Generates detailed analysis documents and final reports
+- 🏷️ **Structured Test Comments**: Every test gets a unique label (`CFT-001-MethodName`) plus environment requirements in a Javadoc comment
+- 🌐 **Four Test Categories**: Core Functionality (CFT), Edge Case (ECT), Error Handling (EHT), and new Connectivity (CNT)
+- 🗂️ **Enhanced Test Metadata**: Labels, categories, and `environmentRequirements` field per test in the JSON file
+- 🌍 **Multi-Environment Config**: Define containerized, baremetal, and secure environments via JSON (`--env-config`)
+- 🔍 **Environment Filtering**: Run only tests that require a specific environment (`--env containerized`)
+- ⚡ **Parallel Test Execution**: Configurable thread-pool for concurrent Maven test processes (`--parallel-threads N`)
+- 🎫 **Per-Issue Ticket Files**: Server-side issues generate individual ticket-ready Markdown files alongside the summary report
 
 ## Prerequisites
 
@@ -80,6 +87,9 @@ When `METHOD_NAME` is omitted, the agent enters **full-service mode** — it dis
 | `--wssqlconn URL` | WsSQL connection URL | `http://sql2ecl.default:8510` |
 | `--hpccuser USERNAME` | HPCC cluster username | Empty string |
 | `--hpccpass PASSWORD` | HPCC cluster password | Empty string |
+| `--env-config FILE` | Path to JSON file defining named HPCC environments (see `environments.example.json`) | None (uses `--hpccconn` / env vars) |
+| `--env NAME` | Run only tests whose `environmentRequirements` includes `NAME` (e.g., `containerized`, `baremetal`, `secure`). Requires `--env-config`. | None (all tests run) |
+| `--parallel-threads N` | Number of concurrent Maven test processes in Step 4 | `1` (sequential) |
 
 > **Note on `--start-from-step`**: Step 0 (Service Discovery) is only applicable in full-service mode. In single-method mode, the minimum start step is 1.
 

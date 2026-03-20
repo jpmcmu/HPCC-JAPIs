@@ -28,6 +28,15 @@ Arguments:
                        If omitted, the script will prompt interactively at startup.
                        Pass an empty string or 'none' to skip scenario input.
                        Example: --scenarios "invalid credentials, empty input, large result sets"
+    --env-config       Path to a JSON file defining one or more named HPCC environments
+                       (containerized, baremetal, secure, etc.). Each environment specifies
+                       its own hpccconn, wssqlconn, user, password, and secure flag.
+                       See environments.example.json for the expected schema.
+    --env              Run only tests whose environmentRequirements list includes this
+                       environment name (e.g., 'containerized', 'baremetal', 'secure').
+                       Requires --env-config.
+    --parallel-threads Number of concurrent Maven test processes in Step 4 (default: 1).
+                       Setting this > 1 runs tests in parallel to reduce wall-clock time.
 
 The script will:
 1. Generate a method analysis using the MethodAnalysisPrompt.md template
@@ -59,6 +68,9 @@ import json
 import re
 import textwrap
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field
+from typing import List, Optional, Dict, Any
 
 # === Configuration ===
 def parse_arguments():
@@ -111,6 +123,23 @@ def parse_arguments():
                              "If not provided, you will be prompted interactively at startup. "
                              "Pass an empty string or 'none' to skip scenario input entirely. "
                              "Example: --scenarios \"invalid credentials, empty input, large result sets\"")
+    parser.add_argument("--env-config",
+                        dest="ENV_CONFIG",
+                        default=None,
+                        help="Path to a JSON file defining HPCC environments (containerized, baremetal, secure, etc.). "
+                             "When provided, overrides --hpccconn/--wssqlconn/--hpccuser/--hpccpass for each "
+                             "named environment. See environments.example.json for the expected schema.")
+    parser.add_argument("--env",
+                        dest="ENV_FILTER",
+                        default=None,
+                        help="Run only tests whose environmentRequirements list includes this environment name "
+                             "(e.g., 'containerized', 'baremetal', 'secure'). Requires --env-config.")
+    parser.add_argument("--parallel-threads",
+                        dest="PARALLEL_THREADS",
+                        type=int,
+                        default=1,
+                        help="Number of parallel threads used to execute individual tests (default: 1 = sequential). "
+                             "Set to a value > 1 to run tests concurrently and speed up Step 4.")
     return parser.parse_args()
 
 args = parse_arguments()
@@ -121,6 +150,9 @@ COPILOT_MODEL = args.COPILOT_MODEL
 HPCC_SOURCE_DIR = os.path.abspath(args.HPCC_SOURCE_DIR)  # Convert to absolute path
 SKIP_ANALYSIS = args.skip_analysis
 START_FROM_STEP = args.start_from_step
+ENV_CONFIG_FILE = args.ENV_CONFIG
+ENV_FILTER = args.ENV_FILTER
+PARALLEL_THREADS = max(1, args.PARALLEL_THREADS)
 
 # Determine testing scenarios (from CLI arg or interactive prompt)
 if args.TESTING_SCENARIOS is not None:
@@ -399,6 +431,78 @@ def render_prompt_file(prompt_file, variables=None):
         raise
 
 
+# ============================================================
+# Environment Configuration
+# ============================================================
+
+@dataclass
+class HPCCEnvironment:
+    """Represents a named HPCC test environment with connection details."""
+    name: str
+    hpccconn: str = "http://eclwatch.default:8010"
+    wssqlconn: str = "http://sql2ecl.default:8510"
+    user: str = ""
+    password: str = ""
+    secure: bool = False
+    description: str = ""
+
+
+def load_environment_config(config_file: str) -> Dict[str, HPCCEnvironment]:
+    """Load HPCC environments from a JSON configuration file.
+
+    The JSON file is expected to have the structure documented in
+    environments.example.json.  Each entry in the ``environments`` array
+    becomes an :class:`HPCCEnvironment` keyed by its ``name`` field.
+
+    Args:
+        config_file: Absolute or relative path to the JSON config file.
+
+    Returns:
+        Ordered dict mapping environment name -> HPCCEnvironment.
+
+    Raises:
+        SystemExit: On missing file, invalid JSON, or schema errors.
+    """
+    if not os.path.exists(config_file):
+        print(f"❌ Error: Environment config file not found: {config_file}")
+        sys.exit(1)
+
+    try:
+        with open(config_file, 'r') as f:
+            data = json.load(f)
+    except json.JSONDecodeError as e:
+        print(f"❌ Error: Invalid JSON in environment config file: {e}")
+        sys.exit(1)
+
+    envs: Dict[str, HPCCEnvironment] = {}
+    raw_envs = data.get("environments", [])
+    if not isinstance(raw_envs, list) or not raw_envs:
+        print("❌ Error: Environment config file must contain a non-empty 'environments' list.")
+        sys.exit(1)
+
+    for entry in raw_envs:
+        name = entry.get("name", "").strip()
+        if not name:
+            print("⚠️  Warning: Skipping environment entry without a 'name' field.")
+            continue
+        envs[name] = HPCCEnvironment(
+            name=name,
+            hpccconn=entry.get("hpccconn", "http://eclwatch.default:8010"),
+            wssqlconn=entry.get("wssqlconn", "http://sql2ecl.default:8510"),
+            user=entry.get("user", ""),
+            password=entry.get("password", ""),
+            secure=bool(entry.get("secure", False)),
+            description=entry.get("description", ""),
+        )
+        print(f"   📡 Environment loaded: {name} -> {envs[name].hpccconn}")
+
+    if not envs:
+        print("❌ Error: No valid environments found in config file.")
+        sys.exit(1)
+
+    return envs
+
+
 def copilot_generate(prompt_file, output_file, variables=None):
     """Invoke Copilot CLI to process a Markdown instruction file with variables."""
     prompt_content = render_prompt_file(prompt_file, variables)
@@ -645,6 +749,87 @@ def run_individual_test(test_class, test_name, hpcc_conn="http://eclwatch.defaul
         "error_message": error_message,
         "exit_code": result.returncode
     }
+
+
+def run_tests_parallel(tests_to_execute, test_class, hpcc_conn, wssql_conn, hpcc_user, hpcc_pass,
+                       disable_dataset_generation=False, num_threads=1):
+    """Run a list of tests, optionally in parallel using a thread pool.
+
+    When *num_threads* is 1 (the default) tests are executed sequentially to
+    preserve the existing behaviour.  For values > 1 a :class:`ThreadPoolExecutor`
+    is used so that multiple Maven sub-processes run concurrently.
+
+    Note: Maven itself is NOT thread-safe when multiple instances share the same
+    local repository cache.  To avoid race conditions on the ``.m2`` directory the
+    per-test Maven commands use ``-pl wsclient`` (a single module) and ``test``
+    (not ``install``), which minimises cross-process cache writes.  For additional
+    safety users can set ``MAVEN_OPTS=-Dmaven.repo.local=<unique-path>`` per job in
+    the GitHub Actions workflow.
+
+    Args:
+        tests_to_execute: List of test-metadata dicts (each with at least ``testName``).
+        test_class: Java test class name (e.g. ``WsStoreClientTest``).
+        hpcc_conn, wssql_conn, hpcc_user, hpcc_pass: Connection credentials.
+        disable_dataset_generation: Passed through to :func:`run_individual_test`.
+        num_threads: Maximum number of concurrent test processes.
+
+    Returns:
+        List of result dicts in the same order as *tests_to_execute*, each
+        containing ``{"metadata": <test_info>, "result": <run_individual_test result>}``.
+    """
+    ordered_results: List[Dict[str, Any]] = [None] * len(tests_to_execute)  # type: ignore[list-item]
+
+    if num_threads <= 1:
+        # Sequential path — identical to the original loop
+        for idx, test_info in enumerate(tests_to_execute):
+            test_name = test_info.get("testName")
+            if not test_name:
+                print(f"⚠️  Skipping test with missing testName: {test_info}")
+                ordered_results[idx] = {"metadata": test_info, "result": {"test_name": None, "passed": False,
+                                                                           "output": "", "error_message": "missing testName",
+                                                                           "exit_code": -1}}
+                continue
+            result = run_individual_test(test_class, test_name, hpcc_conn, wssql_conn,
+                                         hpcc_user, hpcc_pass, disable_dataset_generation)
+            ordered_results[idx] = {"metadata": test_info, "result": result}
+            if result["passed"]:
+                print(f"   ✅ {test_name} - PASSED")
+            else:
+                print(f"   ❌ {test_name} - FAILED")
+    else:
+        print(f"⚡ Parallel execution enabled: up to {num_threads} concurrent test(s)")
+        future_to_idx: Dict[Any, int] = {}
+        with ThreadPoolExecutor(max_workers=num_threads) as executor:
+            for idx, test_info in enumerate(tests_to_execute):
+                test_name = test_info.get("testName")
+                if not test_name:
+                    print(f"⚠️  Skipping test with missing testName: {test_info}")
+                    ordered_results[idx] = {"metadata": test_info, "result": {"test_name": None, "passed": False,
+                                                                               "output": "", "error_message": "missing testName",
+                                                                               "exit_code": -1}}
+                    continue
+                future = executor.submit(run_individual_test, test_class, test_name,
+                                         hpcc_conn, wssql_conn, hpcc_user, hpcc_pass,
+                                         disable_dataset_generation)
+                future_to_idx[future] = idx
+
+            for future in as_completed(future_to_idx):
+                idx = future_to_idx[future]
+                test_info = tests_to_execute[idx]
+                try:
+                    result = future.result()
+                except Exception as exc:
+                    test_name = test_info.get("testName", "unknown")
+                    print(f"   💥 {test_name} - EXCEPTION: {exc}")
+                    result = {"test_name": test_name, "passed": False, "output": str(exc),
+                              "error_message": str(exc), "exit_code": -1}
+                ordered_results[idx] = {"metadata": test_info, "result": result}
+                if result.get("passed"):
+                    print(f"   ✅ {result.get('test_name')} - PASSED")
+                else:
+                    print(f"   ❌ {result.get('test_name')} - FAILED")
+
+    return ordered_results
 
 
 def load_test_metadata(metadata_file):
@@ -1035,190 +1220,234 @@ if START_FROM_STEP <= 4:
             test_file_path = test_file_matches[0]
             print(f"✅ Found test file: {test_file_path}")
 
-    iteration = 0
-
     # Get HPCC connection settings from command-line args, environment, or use defaults
     hpcc_conn = args.HPCC_CONN or os.environ.get("HPCCCONN", "http://eclwatch.default:8010")
     wssql_conn = args.WSSQL_CONN or os.environ.get("WSSQLCONN", "http://sql2ecl.default:8510")
     hpcc_user = args.HPCC_USER or os.environ.get("HPCCUSER", "")
     hpcc_pass = args.HPCC_PASS or os.environ.get("HPCCPASS", "")
-    
-    print(f"\n🔗 Using HPCC connection: {hpcc_conn}")
-    print(f"🔗 Using WsSQL connection: {wssql_conn}")
-    if hpcc_user:
-        print(f"🔐 Using HPCC username: {hpcc_user}")
-        print(f"🔐 Using HPCC password: {'*' * len(hpcc_pass)}")
-    else:
-        print(f"🔓 No authentication credentials provided")
 
-    # Track which tests to run (starts with all tests, then only failures)
-    tests_to_execute = tests_to_run.copy()
-
-    while iteration < MAX_TEST_FIX_ITERATIONS:
-        iteration += 1
-        print(f"\n{'='*60}")
-        print(f"🔄 ITERATION {iteration}/{MAX_TEST_FIX_ITERATIONS}")
-        print(f"{'='*60}")
-    
-        # Only generate datasets on the first iteration
-        disable_dataset_generation = (iteration > 1)
-        if disable_dataset_generation:
-            print(f"🚫 Dataset generation DISABLED for iteration {iteration} (only runs on iteration 1)")
+    # If an environment config file was supplied, resolve the active environment(s)
+    active_environments: List[HPCCEnvironment] = []
+    if ENV_CONFIG_FILE:
+        print(f"\n📋 Loading environment config: {ENV_CONFIG_FILE}")
+        all_environments = load_environment_config(ENV_CONFIG_FILE)
+        if ENV_FILTER:
+            if ENV_FILTER not in all_environments:
+                print(f"❌ Error: Environment '{ENV_FILTER}' not found in config. "
+                      f"Available: {list(all_environments.keys())}")
+                sys.exit(1)
+            active_environments = [all_environments[ENV_FILTER]]
+            print(f"🔍 Running only tests for environment: {ENV_FILTER}")
         else:
-            print(f"✅ Dataset generation ENABLED for iteration {iteration}")
-        
-        # Run tests
-        print(f"\n🧪 Running {len(tests_to_execute)} test(s) individually...")
-        test_results = []
-        
-        for test_info in tests_to_execute:
-            test_name = test_info.get("testName")
-            if not test_name:
-                print(f"⚠️  Skipping test with missing testName: {test_info}")
-                continue
-            
-            # Run the individual test
-            result = run_individual_test(test_class, test_name, hpcc_conn, wssql_conn, hpcc_user, hpcc_pass, disable_dataset_generation)
-            test_results.append({
-                "metadata": test_info,
-                "result": result
-            })
-            
-            # Print immediate result
-            if result["passed"]:
-                print(f"   ✅ {test_name} - PASSED")
+            active_environments = list(all_environments.values())
+            print(f"🌐 Running tests across all {len(active_environments)} environment(s)")
+    else:
+        # Build a synthetic environment from the CLI / env-var credentials
+        active_environments = [
+            HPCCEnvironment(
+                name="default",
+                hpccconn=hpcc_conn,
+                wssqlconn=wssql_conn,
+                user=hpcc_user,
+                password=hpcc_pass,
+            )
+        ]
+
+    print(f"\n🔗 Active environments: {[e.name for e in active_environments]}")
+    print(f"⚡ Parallel thread count: {PARALLEL_THREADS}")
+
+    # Outer loop — iterate over each active environment
+    for env in active_environments:
+        hpcc_conn = env.hpccconn
+        wssql_conn = env.wssqlconn
+        hpcc_user = env.user
+        hpcc_pass = env.password
+
+        print(f"\n{'='*60}")
+        print(f"🌐 ENVIRONMENT: {env.name.upper()}")
+        if env.description:
+            print(f"   {env.description}")
+        print(f"{'='*60}")
+        print(f"🔗 HPCC connection: {hpcc_conn}")
+        print(f"🔗 WsSQL connection: {wssql_conn}")
+        if hpcc_user:
+            print(f"🔐 Username: {hpcc_user}")
+            print(f"🔐 Password: {'*' * len(hpcc_pass)}")
+        else:
+            print("🔓 No authentication credentials configured")
+
+        # Filter tests by environmentRequirements when an env filter is active.
+        # Tests with no environmentRequirements field (or empty list) are run
+        # in every environment so that existing metadata stays compatible.
+        if ENV_FILTER:
+            env_tests = [
+                t for t in tests_to_run
+                if not t.get("environmentRequirements") or env.name in t.get("environmentRequirements", [])
+            ]
+            print(f"🔍 Tests matching environment '{env.name}': {len(env_tests)} / {len(tests_to_run)}")
+        else:
+            env_tests = tests_to_run[:]
+
+        if not env_tests:
+            print(f"⚠️  No tests to run for environment '{env.name}' — skipping.")
+            continue
+
+        # Track which tests to run (starts with all env-filtered tests, then only failures)
+        tests_to_execute = env_tests[:]
+        iteration = 0
+
+        while iteration < MAX_TEST_FIX_ITERATIONS:
+            iteration += 1
+            print(f"\n{'='*60}")
+            print(f"🔄 ITERATION {iteration}/{MAX_TEST_FIX_ITERATIONS}")
+            print(f"{'='*60}")
+    
+            # Only generate datasets on the first iteration
+            disable_dataset_generation = (iteration > 1)
+            if disable_dataset_generation:
+                print(f"🚫 Dataset generation DISABLED for iteration {iteration} (only runs on iteration 1)")
             else:
-                print(f"   ❌ {test_name} - FAILED")
+                print(f"✅ Dataset generation ENABLED for iteration {iteration}")
         
-        # Save test results
-        results_file = save_test_results(test_results, iteration)
+# Run tests — parallel or sequential depending on PARALLEL_THREADS
+            print(f"\n🧪 Running {len(tests_to_execute)} test(s)" +
+                  (f" (up to {PARALLEL_THREADS} in parallel)..." if PARALLEL_THREADS > 1 else " sequentially..."))
+            test_results = run_tests_parallel(
+                tests_to_execute, test_class,
+                hpcc_conn, wssql_conn, hpcc_user, hpcc_pass,
+                disable_dataset_generation=disable_dataset_generation,
+                num_threads=PARALLEL_THREADS,
+            )
         
-        # Collect failures
-        failures = [tr for tr in test_results if not tr["result"]["passed"]]
+            # Save test results
+            results_file = save_test_results(test_results, iteration)
+        
+            # Collect failures
+            failures = [tr for tr in test_results if not tr["result"]["passed"]]
     
-        if not failures:
-            print("\n🎉 All tests passed!")
-            break
+            if not failures:
+                print("\n🎉 All tests passed!")
+                break
     
-        print(f"\n⚠️  Found {len(failures)} test failure(s)")
+            print(f"\n⚠️  Found {len(failures)} test failure(s)")
         
-        # Calculate statistics
-        passed_count = len([tr for tr in test_results if tr["result"]["passed"]])
-        failed_count = len(failures)
+            # Calculate statistics
+            passed_count = len([tr for tr in test_results if tr["result"]["passed"]])
+            failed_count = len(failures)
         
-        print(f"\n📊 Iteration {iteration} Results:")
-        print(f"   Total Tests Run: {len(test_results)}")
-        print(f"   Passed: {passed_count}")
-        print(f"   Failed: {failed_count}")
+            print(f"\n📊 Iteration {iteration} Results:")
+            print(f"   Total Tests Run: {len(test_results)}")
+            print(f"   Passed: {passed_count}")
+            print(f"   Failed: {failed_count}")
     
-        # Build comprehensive failure report for batch analysis
-        print(f"\n📝 Preparing comprehensive failure report...")
+            # Build comprehensive failure report for batch analysis
+            print(f"\n📝 Preparing comprehensive failure report...")
         
-        failure_report = textwrap.dedent(f"""
-            # Test Failure Report - Iteration {iteration}
-            # Service: {SERVICE_NAME}, Method: {METHOD_NAME}
+            failure_report = textwrap.dedent(f"""
+                # Test Failure Report - Iteration {iteration}
+                # Service: {SERVICE_NAME}, Method: {METHOD_NAME}
 
-            ## Summary
-            - Total tests run: {len(test_results)}
-            - Tests passed: {passed_count}
-            - Tests failed: {failed_count}
-            - Test results file: {results_file}
-            - Test file: {test_file_path}
+                ## Summary
+                - Total tests run: {len(test_results)}
+                - Tests passed: {passed_count}
+                - Tests failed: {failed_count}
+                - Test results file: {results_file}
+                - Test file: {test_file_path}
 
-            ## Failed Tests Details
-
-        """)
-        
-        for idx, failure_data in enumerate(failures, 1):
-            test_name = failure_data["result"]["test_name"]
-            test_metadata_info = failure_data["metadata"]
-            failure_content = failure_data["result"]["error_message"]
-            full_output = failure_data["result"]["output"]
-            
-            failure_report += textwrap.dedent(f"""
-                ### {idx}. {test_name}
-
-                **Test Metadata:**
-                - Category: {test_metadata_info.get('category', 'unknown')}
-                - Description: {test_metadata_info.get('description', 'N/A')}
-                - Expected Outcome: {test_metadata_info.get('expectedOutcome', 'PASS')}
-                - Requires Data: {test_metadata_info.get('requiresData', False)}
-                - Required Dataset: {test_metadata_info.get('requiredDataset', 'N/A')}
-                - Notes: {test_metadata_info.get('notes', 'N/A')}
-
-                **Exit Code:** {failure_data["result"]["exit_code"]}
-
-                **Error Message:**
-                ```
-                {failure_content}
-                ```
-
-                **Full Output (last 2000 chars):**
-                ```
-                {full_output[-2000:]}
-                ```
-
-                ---
+                ## Failed Tests Details
 
             """)
-
-        # Append datestamp to failure report
-        failure_report += f"\n\n---\n*Generated: {DATESTAMP}*\n"
         
-        # Save the comprehensive failure report
-        failure_report_file = os.path.join(OUTPUT_DIR, f"{SERVICE_NAME}.{METHOD_NAME}FailureReport_Iteration{iteration}_{DATESTAMP}.md")
-        with open(failure_report_file, 'w') as f:
-            f.write(failure_report)
-        
-        print(f"✅ Failure report saved: {failure_report_file}")
-
-        # Now analyze ALL failures at once with Copilot
-        print(f"\n🤖 Analyzing all {len(failures)} failure(s) with Copilot...")
-        
-        # Run Copilot for batch analysis and fixes
-        print(f"\n🔧 Running Copilot to analyze and fix all failures...")
-        copilot_run_from_template(
-            BATCH_FAILURE_ANALYSIS_PROMPT_FILE,
-            {
-                    "ITERATION": iteration,
-                    "FAILURE_REPORT_FILE": failure_report_file,
-                    "TEST_FILE_PATH": test_file_path,
-                    "RESULTS_FILE": results_file,
-                    "SERVICE_NAME": SERVICE_NAME,
-                    "METHOD_NAME": METHOD_NAME,
-                    "DATESTAMP": DATESTAMP,
-                    "CODE_ARCHITECTURE_PROMPT": code_architecture_prompt,
-            },
-        )
-        
-        # Check if analysis file was created
-        analysis_summary_file = os.path.join(OUTPUT_DIR, f"{SERVICE_NAME}.{METHOD_NAME}BatchAnalysis_Iteration{iteration}_{DATESTAMP}.md")
-        if os.path.exists(analysis_summary_file):
-            # Append datestamp if not already present
-            with open(analysis_summary_file, 'r') as f:
-                content = f.read()
-            if f"*Generated: {DATESTAMP}*" not in content:
-                with open(analysis_summary_file, 'a') as f:
-                    f.write(f"\n\n---\n*Generated: {DATESTAMP}*\n")
+            for idx, failure_data in enumerate(failures, 1):
+                test_name = failure_data["result"]["test_name"]
+                test_metadata_info = failure_data["metadata"]
+                failure_content = failure_data["result"]["error_message"]
+                full_output = failure_data["result"]["output"]
             
-            print(f"✅ Analysis summary created: {analysis_summary_file}")
-            with open(analysis_summary_file, 'r') as f:
-                analysis_content = f.read()
-            print(f"\n📋 Analysis Summary:\n{analysis_content[:500]}...")
-        else:
-            print(f"⚠️  Warning: Analysis summary not created at {analysis_summary_file}")
+                failure_report += textwrap.dedent(f"""
+                    ### {idx}. {test_name}
+
+                    **Test Metadata:**
+                    - Category: {test_metadata_info.get('category', 'unknown')}
+                    - Description: {test_metadata_info.get('description', 'N/A')}
+                    - Expected Outcome: {test_metadata_info.get('expectedOutcome', 'PASS')}
+                    - Requires Data: {test_metadata_info.get('requiresData', False)}
+                    - Required Dataset: {test_metadata_info.get('requiredDataset', 'N/A')}
+                    - Notes: {test_metadata_info.get('notes', 'N/A')}
+
+                    **Exit Code:** {failure_data["result"]["exit_code"]}
+
+                    **Error Message:**
+                    ```
+                    {failure_content}
+                    ```
+
+                    **Full Output (last 2000 chars):**
+                    ```
+                    {full_output[-2000:]}
+                    ```
+
+                    ---
+
+                """)
+
+            # Append datestamp to failure report
+            failure_report += f"\n\n---\n*Generated: {DATESTAMP}*\n"
         
-        # Prepare to re-run only the failed tests in next iteration
-        # Extract metadata from failures since failures have structure: {"metadata": {...}, "result": {...}}
-        tests_to_execute = [f["metadata"] for f in failures]
+            # Save the comprehensive failure report
+            failure_report_file = os.path.join(OUTPUT_DIR, f"{SERVICE_NAME}.{METHOD_NAME}FailureReport_Iteration{iteration}_{DATESTAMP}.md")
+            with open(failure_report_file, 'w') as f:
+                f.write(failure_report)
         
-        print(f"\n🔁 Next iteration will re-run {len(failures)} failed test(s)")
+            print(f"✅ Failure report saved: {failure_report_file}")
+
+            # Now analyze ALL failures at once with Copilot
+            print(f"\n🤖 Analyzing all {len(failures)} failure(s) with Copilot...")
         
-        # Give user a chance to review before continuing
-        print(f"\n⏸️  Iteration {iteration} complete. Copilot should have made fixes.")
-        print(f"   - Review {analysis_summary_file} for details")
-        print(f"   - Check {test_file_path} for changes")
-        print(f"   - Failed tests will be re-run in next iteration")
+            # Run Copilot for batch analysis and fixes
+            print(f"\n🔧 Running Copilot to analyze and fix all failures...")
+            copilot_run_from_template(
+                BATCH_FAILURE_ANALYSIS_PROMPT_FILE,
+                {
+                        "ITERATION": iteration,
+                        "FAILURE_REPORT_FILE": failure_report_file,
+                        "TEST_FILE_PATH": test_file_path,
+                        "RESULTS_FILE": results_file,
+                        "SERVICE_NAME": SERVICE_NAME,
+                        "METHOD_NAME": METHOD_NAME,
+                        "DATESTAMP": DATESTAMP,
+                        "CODE_ARCHITECTURE_PROMPT": code_architecture_prompt,
+                },
+            )
+        
+            # Check if analysis file was created
+            analysis_summary_file = os.path.join(OUTPUT_DIR, f"{SERVICE_NAME}.{METHOD_NAME}BatchAnalysis_Iteration{iteration}_{DATESTAMP}.md")
+            if os.path.exists(analysis_summary_file):
+                # Append datestamp if not already present
+                with open(analysis_summary_file, 'r') as f:
+                    content = f.read()
+                if f"*Generated: {DATESTAMP}*" not in content:
+                    with open(analysis_summary_file, 'a') as f:
+                        f.write(f"\n\n---\n*Generated: {DATESTAMP}*\n")
+            
+                print(f"✅ Analysis summary created: {analysis_summary_file}")
+                with open(analysis_summary_file, 'r') as f:
+                    analysis_content = f.read()
+                print(f"\n📋 Analysis Summary:\n{analysis_content[:500]}...")
+            else:
+                print(f"⚠️  Warning: Analysis summary not created at {analysis_summary_file}")
+        
+            # Prepare to re-run only the failed tests in next iteration
+            # Extract metadata from failures since failures have structure: {"metadata": {...}, "result": {...}}
+            tests_to_execute = [f["metadata"] for f in failures]
+        
+            print(f"\n🔁 Next iteration will re-run {len(failures)} failed test(s)")
+        
+            # Give user a chance to review before continuing
+            print(f"\n⏸️  Iteration {iteration} complete. Copilot should have made fixes.")
+            print(f"   - Review {analysis_summary_file} for details")
+            print(f"   - Check {test_file_path} for changes")
+            print(f"   - Failed tests will be re-run in next iteration")
 
     # Final summary
     print(f"\n{'='*60}")

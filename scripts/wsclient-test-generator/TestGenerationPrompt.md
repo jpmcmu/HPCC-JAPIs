@@ -84,6 +84,71 @@ Use this context to ensure tests are self-contained and do not depend on executi
 All tests must go into the single test class `${SERVICE_NAME}ClientTest.java`.
 Use unique test data identifiers per test method to avoid conflicts between tests.
 
+---
+
+## 🏷️ Test Categories
+
+Implement tests in four categories. Every test method in the Java class must be
+annotated with exactly one `@Category` annotation identifying its category class.
+
+| Category | Label Prefix | Java Annotation | Description |
+|----------|-------------|-----------------|-------------|
+| Core Functionality | `CFT` | `@Category(CoreFunctionalityTests.class)` | Normal operation, complete requests, happy-path workflows |
+| Edge Case | `ECT` | `@Category(EdgeCaseTests.class)` | Boundary values, optional parameters, unusual–but-valid inputs |
+| Error Handling | `EHT` | `@Category(ErrorHandlingTests.class)` | Invalid inputs, expected error responses, failure scenarios |
+| Connectivity | `CNT` | `@Category(ConnectivityTests.class)` | Service reachability, authentication, endpoint validation |
+
+--
+
+## 📝 Required Comment Block Above Every Test
+
+Place the following structured Javadoc comment **immediately above** each `@Test` method
+(before any `@Category` or other annotations):
+
+```java
+/**
+ * [LABEL] [Brief 1–2 sentence description of what this test validates]
+ *
+ * <p>Environment requirements: [comma-separated list from: containerized, baremetal, secure, any]
+ */
+```
+
+**Label format:** `<CATEGORY_PREFIX>-<THREE_DIGIT_SEQUENCE>-<MethodName>`
+- Category prefix: `CFT`, `ECT`, `EHT`, or `CNT`
+- Sequence: three-digit integer, unique within the category for this method, starting at `001`
+- MethodName: the Java service method under test (e.g., `getFileDataColumns`)
+
+**Examples:**
+```java
+/**
+ * CFT-001-getFileDataColumns — Validates that a request with a valid logical file path
+ * returns a non-empty column list with correct field names and types.
+ *
+ * <p>Environment requirements: containerized, baremetal
+ */
+@Category(CoreFunctionalityTests.class)
+@Test
+public void testGetFileDataColumns_validFile() { ... }
+
+/**
+ * CNT-001-getFileDataColumns — Verifies the service endpoint is reachable and the method
+ * returns a non-null response for a minimal valid request.
+ *
+ * <p>Environment requirements: any
+ */
+@Category(ConnectivityTests.class)
+@Test
+public void testGetFileDataColumns_connectivity() { ... }
+```
+
+**Environment requirement guidance:**
+- `any` — test runs in all environments (no special setup required)
+- `containerized` — requires a K8s/Docker-deployed HPCC cluster
+- `baremetal` — requires a bare-metal/native HPCC installation
+- `secure` — requires an HPCC cluster with security/authentication enabled
+
+---
+
 Additionally, create a JSON file named ${TEST_METADATA_FILE} with the following structure:
 {
   "service": "${SERVICE_NAME}",
@@ -92,21 +157,31 @@ Additionally, create a JSON file named ${TEST_METADATA_FILE} with the following 
   "tests": [
     {
       "testName": "testMethodName",
+      "label": "CFT-001-MethodName",
       "method": "${METHOD_NAME}",
       "description": "Brief description of what this test validates",
-      "category": "basic|edge-case|error-handling|integration",
+      "category": "CFT|ECT|EHT|CNT",
+      "environmentRequirements": ["any"],
       "expectedOutcome": "PASS|SKIP",
-      "requiresData": true|false,
+      "requiresData": true,
+      "requiredDataset": "~test::dataset::name or N/A",
       "notes": "Any special considerations or requirements"
     }
   ]
 }
+
+**Field notes:**
+- `label` — must exactly match the label in the comment block (e.g., `CFT-001-getFileDataColumns`)
+- `category` — use the prefix: `CFT`, `ECT`, `EHT`, or `CNT`
+- `environmentRequirements` — JSON array of strings matching the `<p>Environment requirements:` line.
+  Use `["any"]` when the test runs everywhere. Allowed values: `any`, `containerized`, `baremetal`, `secure`.
 
 List ALL test methods you create in this JSON file. This metadata will be used to:
 1. Run each test individually using: mvn -B --activate-profiles jenkins-on-demand,remote-test 
    -Dhpccconn=http://eclwatch.default:8010 -Dwssqlconn=http://sql2ecl.default:8510 
    -Dtest=${SERVICE_NAME}ClientTest#<testName> test
 2. Track test results and categorize failures
-3. Generate comprehensive test reports
+3. Filter tests by environment at runtime (--env flag)
+4. Generate comprehensive test reports
 
 Ensure the testName values exactly match the method names in the test class.

@@ -1,0 +1,551 @@
+name: WsClient Test Generator Suite
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Manual trigger only.  Runs the generated test suite for a specified WsClient
+# service across three environment types: containerized (K8s), baremetal, and
+# secure (baremetal + authentication).
+#
+# Prerequisites:
+#   • The test class for SERVICE_NAME must already be generated and committed.
+#     Run TestGeneratorAgent.py locally (steps 0–3) first, commit the resulting
+#     *ClientTest.java, then trigger this workflow.
+#
+# Outputs:
+#   • Test results and failure reports uploaded as workflow artifacts per job.
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_dispatch:
+    inputs:
+      service_name:
+        description: "WsClient service name (e.g. WsDFU, WSStore, WsResources)"
+        required: true
+        type: string
+      method_name:
+        description: "Method name for single-method mode (leave blank for full-service mode)"
+        required: false
+        default: ""
+        type: string
+      parallel_threads:
+        description: "Number of parallel Maven test processes in Step 4 (default: 1)"
+        required: false
+        default: "1"
+        type: string
+      output_dir:
+        description: "Path (relative to repo root) of TestGeneratorAgent output dir to load metadata from. Leave blank to run all tests in the service's test class."
+        required: false
+        default: ""
+        type: string
+      hpcc_platform_repo:
+        description: "HPCC Platform GitHub repository (owner/repo) for K8s deployment. Leave blank for latest community release."
+        required: false
+        default: ""
+        type: string
+      hpcc_platform_branch:
+        description: "HPCC Platform branch/tag for K8s deployment. Used only when hpcc_platform_repo is set."
+        required: false
+        default: "master"
+        type: string
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Jobs
+# ─────────────────────────────────────────────────────────────────────────────
+jobs:
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Job 1: Build — compile the project and upload the wsclient test-classes
+  # ───────────────────────────────────────────────────────────────────────────
+  build:
+    name: Build project
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Setup JDK 11
+        uses: actions/setup-java@v1
+        with:
+          java-version: 11
+
+      - name: Cache Maven packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2
+
+      - name: Compile project (skip tests)
+        run: mvn -B clean compile test-compile -DskipTests -pl wsclient -Dmaven.gpg.skip=true
+
+      - name: Archive compiled test sources
+        uses: actions/upload-artifact@v4
+        with:
+          name: wsclient-test-classes
+          path: |
+            wsclient/target/
+            wsclient/src/test/
+            wsclient/src/main/
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Job 2: Containerized (K8s / microk8s) environment
+  # ───────────────────────────────────────────────────────────────────────────
+  test-containerized:
+    name: Test — Containerized (K8s)
+    needs: build
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Setup JDK 11
+        uses: actions/setup-java@v1
+        with:
+          java-version: 11
+
+      - name: Setup Python 3.8
+        uses: actions/setup-python@v2
+        with:
+          python-version: "3.8"
+
+      - name: Cache Maven packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2
+
+      - name: Download compiled test classes
+        uses: actions/download-artifact@v4
+        with:
+          name: wsclient-test-classes
+          path: wsclient/
+
+      - name: Setup microk8s
+        uses: balchua/microk8s-actions@v0.3.2
+        with:
+          channel: "1.26/stable"
+          addons: '["dns", "rbac", "hostpath-storage", "registry"]'
+
+      - name: Deploy HPCC Platform (K8s)
+        env:
+          HPCC_PLATFORM_REPO: ${{ github.event.inputs.hpcc_platform_repo }}
+          HPCC_PLATFORM_BRANCH: ${{ github.event.inputs.hpcc_platform_branch }}
+        run: |
+          # Install Helm
+          curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+          # Add HPCC Helm repo
+          helm repo add hpcc https://hpcc-systems.github.io/helm-chart/
+          helm repo update
+
+          # Determine which chart version / custom values to use
+          if [ -n "$HPCC_PLATFORM_REPO" ]; then
+            echo "Using custom HPCC Platform: $HPCC_PLATFORM_REPO @ $HPCC_PLATFORM_BRANCH"
+          fi
+
+          # Deploy with minimal resources
+          kubectl create namespace default --dry-run=client -o yaml | kubectl apply -f -
+          helm install hpcc hpcc/hpcc \
+            --namespace default \
+            --wait --timeout 10m \
+            --set global.image.pullPolicy=Always
+
+          # Wait for all pods to be ready
+          kubectl wait --for=condition=ready pod --all --namespace default --timeout=300s
+
+      - name: Create environment config
+        run: |
+          cat > environments.json <<'EOF'
+          {
+            "environments": [
+              {
+                "name": "containerized",
+                "description": "K8s-deployed HPCC cluster (microk8s)",
+                "hpccconn": "https://eclwatch.default:8010",
+                "wssqlconn": "https://sql2ecl.default:8510",
+                "user": "",
+                "password": "",
+                "secure": false
+              }
+            ]
+          }
+          EOF
+
+      - name: Run tests — containerized environment
+        env:
+          SERVICE_NAME: ${{ github.event.inputs.service_name }}
+          METHOD_NAME: ${{ github.event.inputs.method_name }}
+          PARALLEL_THREADS: ${{ github.event.inputs.parallel_threads }}
+          OUTPUT_DIR: ${{ github.event.inputs.output_dir }}
+        run: |
+          ARGS="$SERVICE_NAME"
+          if [ -n "$METHOD_NAME" ]; then ARGS="$ARGS $METHOD_NAME"; fi
+          ARGS="$ARGS --hpcc-source /tmp/hpcc-source-placeholder"
+          ARGS="$ARGS --env-config environments.json --env containerized"
+          ARGS="$ARGS --start-from-step 4"
+          ARGS="$ARGS --parallel-threads $PARALLEL_THREADS"
+          ARGS="$ARGS --scenarios none"
+
+          echo "Running: python3 scripts/wsclient-test-generator/TestGeneratorAgent.py $ARGS"
+          python3 scripts/wsclient-test-generator/TestGeneratorAgent.py $ARGS
+
+      - name: Collect HPCC logs
+        if: always()
+        run: |
+          mkdir -p test-logs/containerized
+          for svc in rowservice eclwatch sql2ecl; do
+            kubectl logs -l app=$svc --namespace default > test-logs/containerized/${svc}.log 2>&1 || true
+          done
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-containerized
+          path: |
+            **/*TestResults_Iteration*.json
+            **/*FinalReport_*.md
+            **/*FailureReport_*.md
+            **/*BatchAnalysis_*.md
+            **/*ServerIssue_*.md
+            test-logs/containerized/
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Job 3: Baremetal (insecure) environment
+  # ───────────────────────────────────────────────────────────────────────────
+  test-baremetal:
+    name: Test — Baremetal (insecure)
+    needs: build
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Setup JDK 11
+        uses: actions/setup-java@v1
+        with:
+          java-version: 11
+
+      - name: Setup Python 3.8
+        uses: actions/setup-python@v2
+        with:
+          python-version: "3.8"
+
+      - name: Cache Maven packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2
+
+      - name: Download compiled test classes
+        uses: actions/download-artifact@v4
+        with:
+          name: wsclient-test-classes
+          path: wsclient/
+
+      - name: Extract HPCC Platform version
+        id: hpcc_version
+        env:
+          BRANCH_NAME: "master"
+        shell: python
+        run: |
+          import os, re, subprocess, sys
+
+          def get_tag_version(cmd):
+              pattern = re.compile(r'.*hpcc4j_([0-9]+\.[0-9]+\.[0-9]+).*')
+              proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, shell=True)
+              out, _ = proc.communicate()
+              match = pattern.match(str(out))
+              if match:
+                  return list(map(int, match.group(1).split('.')))
+              return None
+
+          ver = get_tag_version("git tag --list 'hpcc4j_*-release' --sort=-v:refname | head -n 1")
+          if ver is None:
+              # Fall back to a known stable version
+              ver = [9, 6, 0]
+
+          ver_str = ".".join(map(str, ver))
+          prev = [ver[0], ver[1], max(0, ver[2] - 2)]
+          prev_str = ".".join(map(str, prev))
+
+          base = "https://github.com/hpcc-systems/HPCC-Platform/releases/download"
+          def url(v): return f"{base}/community_{v}-1/hpccsystems-platform-community_{v}-1jammy_amd64_withsymbols.deb"
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"latestVersion={ver_str}\n")
+              f.write(f"latestVersionURL={url(ver_str)}\n")
+              f.write(f"previousVersionURL={url(prev_str)}\n")
+
+      - name: Install HPCC Platform
+        run: |
+          URL="${{ steps.hpcc_version.outputs.latestVersionURL }}"
+          PREV="${{ steps.hpcc_version.outputs.previousVersionURL }}"
+          if wget -q --spider "$URL"; then wget -q "$URL"
+          elif wget -q --spider "$PREV"; then wget -q "$PREV"
+          else echo "Unable to find HPCC Platform package"; exit 1; fi
+          sudo apt-get update -q
+          sudo dpkg -i hpccsystems-platform-community_*.deb || sudo apt-get -f install -y
+          sudo /opt/HPCCSystems/etc/init.d/setupPKI
+
+      - name: Start HPCC Platform
+        run: |
+          export LANG="en_US.UTF-8"
+          sudo update-locale
+          sudo /etc/init.d/hpcc-init start
+
+      - name: Add host file entries
+        run: |
+          sudo sh -c "echo '127.0.0.1 eclwatch.default' >> /etc/hosts"
+          sudo sh -c "echo '127.0.0.1 rowservice.default' >> /etc/hosts"
+          sudo sh -c "echo '127.0.0.1 sql2ecl.default' >> /etc/hosts"
+
+      - name: Create environment config
+        run: |
+          cat > environments.json <<'EOF'
+          {
+            "environments": [
+              {
+                "name": "baremetal",
+                "description": "Bare-metal HPCC installation (insecure)",
+                "hpccconn": "http://eclwatch.default:8010",
+                "wssqlconn": "http://sql2ecl.default:8510",
+                "user": "",
+                "password": "",
+                "secure": false
+              }
+            ]
+          }
+          EOF
+
+      - name: Run tests — baremetal environment
+        env:
+          SERVICE_NAME: ${{ github.event.inputs.service_name }}
+          METHOD_NAME: ${{ github.event.inputs.method_name }}
+          PARALLEL_THREADS: ${{ github.event.inputs.parallel_threads }}
+        run: |
+          ARGS="$SERVICE_NAME"
+          if [ -n "$METHOD_NAME" ]; then ARGS="$ARGS $METHOD_NAME"; fi
+          ARGS="$ARGS --hpcc-source /tmp/hpcc-source-placeholder"
+          ARGS="$ARGS --env-config environments.json --env baremetal"
+          ARGS="$ARGS --start-from-step 4"
+          ARGS="$ARGS --parallel-threads $PARALLEL_THREADS"
+          ARGS="$ARGS --scenarios none"
+
+          python3 scripts/wsclient-test-generator/TestGeneratorAgent.py $ARGS
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-baremetal
+          path: |
+            **/*TestResults_Iteration*.json
+            **/*FinalReport_*.md
+            **/*FailureReport_*.md
+            **/*BatchAnalysis_*.md
+            **/*ServerIssue_*.md
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Job 4: Baremetal — secure environment (htpasswdsecmgr)
+  # ───────────────────────────────────────────────────────────────────────────
+  test-secure:
+    name: Test — Baremetal (secure)
+    needs: build
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Setup JDK 11
+        uses: actions/setup-java@v1
+        with:
+          java-version: 11
+
+      - name: Setup Python 3.8
+        uses: actions/setup-python@v2
+        with:
+          python-version: "3.8"
+
+      - name: Cache Maven packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2
+
+      - name: Download compiled test classes
+        uses: actions/download-artifact@v4
+        with:
+          name: wsclient-test-classes
+          path: wsclient/
+
+      - name: Extract HPCC Platform version
+        id: hpcc_version
+        shell: python
+        run: |
+          import os, re, subprocess
+
+          def get_tag_version(cmd):
+              pattern = re.compile(r'.*hpcc4j_([0-9]+\.[0-9]+\.[0-9]+).*')
+              proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, shell=True)
+              out, _ = proc.communicate()
+              match = pattern.match(str(out))
+              if match:
+                  return list(map(int, match.group(1).split('.')))
+              return None
+
+          ver = get_tag_version("git tag --list 'hpcc4j_*-release' --sort=-v:refname | head -n 1") or [9, 6, 0]
+          ver_str = ".".join(map(str, ver))
+          prev_str = ".".join(map(str, [ver[0], ver[1], max(0, ver[2]-2)]))
+
+          base = "https://github.com/hpcc-systems/HPCC-Platform/releases/download"
+          def url(v): return f"{base}/community_{v}-1/hpccsystems-platform-community_{v}-1jammy_amd64_withsymbols.deb"
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"latestVersion={ver_str}\n")
+              f.write(f"latestVersionURL={url(ver_str)}\n")
+              f.write(f"previousVersionURL={url(prev_str)}\n")
+
+      - name: Install HPCC Platform
+        run: |
+          URL="${{ steps.hpcc_version.outputs.latestVersionURL }}"
+          PREV="${{ steps.hpcc_version.outputs.previousVersionURL }}"
+          if wget -q --spider "$URL"; then wget -q "$URL"
+          elif wget -q --spider "$PREV"; then wget -q "$PREV"
+          else echo "Unable to find HPCC Platform package"; exit 1; fi
+          sudo apt-get update -q
+          sudo dpkg -i hpccsystems-platform-community_*.deb || sudo apt-get -f install -y
+          sudo /opt/HPCCSystems/etc/init.d/setupPKI
+
+      - name: Generate htpasswd credentials
+        run: |
+          HPCC_USER=$(openssl rand -hex 8)
+          HPCC_PASS=$(openssl rand -hex 16)
+          echo "HPCC_USER=$HPCC_USER" >> $GITHUB_ENV
+          echo "HPCC_PASS=$HPCC_PASS" >> $GITHUB_ENV
+          sudo apt-get install -y apache2-utils
+          sudo htpasswd -c -b /etc/HPCCSystems/.htpasswd "$HPCC_USER" "$HPCC_PASS"
+
+      - name: Configure htpasswdsecmgr
+        shell: python
+        run: |
+          import xml.etree.ElementTree as ET
+
+          env_file = '/etc/HPCCSystems/environment.xml'
+          tree = ET.parse(env_file)
+          root = tree.getroot()
+
+          programs = root.find('./Programs')
+          build = programs.find('./Build')
+          buildset = ET.SubElement(build, 'BuildSet')
+          buildset.set('deployable', 'no')
+          buildset.set('installSet', 'deploy_map.xml')
+          buildset.set('name', 'htpasswdsecmgr')
+          buildset.set('path', 'componentfiles/htpasswdsecmgr')
+          buildset.set('processName', 'HtpasswdSecurityManager')
+          buildset.set('schema', 'htpasswd_secmgr.xsd')
+
+          software = root.find('./Software')
+          for esp in software.findall('./EspProcess'):
+              auth = esp.find('./Authentication')
+              if auth is not None:
+                  auth.set('method', 'secmgrPlugin')
+              for binding in esp.findall('./EspBinding'):
+                  if binding.get('name') == 'myespsmc':
+                      binding.set('type', 'htpasswdsecmgr')
+
+          mgr = ET.SubElement(software, 'HtpasswdSecurityManager')
+          mgr.set('build', '_')
+          mgr.set('buildSet', 'htpasswdsecmgr')
+          mgr.set('htpasswdFile', '/etc/HPCCSystems/.htpasswd')
+          mgr.set('instanceFactoryName', 'createInstance')
+          mgr.set('libName', 'libhtpasswdSecurity.so')
+          mgr.set('name', 'htpasswdsecmgr')
+          mgr.set('type', 'SecurityManager')
+
+          tree.write('tmp_environment.xml')
+
+      - name: Apply environment.xml
+        run: |
+          sudo mv /etc/HPCCSystems/environment.xml /etc/HPCCSystems/environment.xml.bak
+          sudo mv tmp_environment.xml /etc/HPCCSystems/environment.xml
+          sudo chown hpcc:hpcc /etc/HPCCSystems/environment.xml
+
+      - name: Start HPCC Platform
+        run: |
+          export LANG="en_US.UTF-8"
+          sudo update-locale
+          sudo /etc/init.d/hpcc-init start
+
+      - name: Add host file entries
+        run: |
+          sudo sh -c "echo '127.0.0.1 eclwatch.default' >> /etc/hosts"
+          sudo sh -c "echo '127.0.0.1 rowservice.default' >> /etc/hosts"
+          sudo sh -c "echo '127.0.0.1 sql2ecl.default' >> /etc/hosts"
+
+      - name: Create environment config
+        run: |
+          cat > environments.json <<EOF
+          {
+            "environments": [
+              {
+                "name": "secure",
+                "description": "Bare-metal HPCC installation with htpasswdsecmgr authentication",
+                "hpccconn": "http://eclwatch.default:8010",
+                "wssqlconn": "http://sql2ecl.default:8510",
+                "user": "$HPCC_USER",
+                "password": "$HPCC_PASS",
+                "secure": true
+              }
+            ]
+          }
+          EOF
+
+      - name: Run tests — secure environment
+        env:
+          SERVICE_NAME: ${{ github.event.inputs.service_name }}
+          METHOD_NAME: ${{ github.event.inputs.method_name }}
+          PARALLEL_THREADS: ${{ github.event.inputs.parallel_threads }}
+        run: |
+          ARGS="$SERVICE_NAME"
+          if [ -n "$METHOD_NAME" ]; then ARGS="$ARGS $METHOD_NAME"; fi
+          ARGS="$ARGS --hpcc-source /tmp/hpcc-source-placeholder"
+          ARGS="$ARGS --env-config environments.json --env secure"
+          ARGS="$ARGS --start-from-step 4"
+          ARGS="$ARGS --parallel-threads $PARALLEL_THREADS"
+          ARGS="$ARGS --scenarios none"
+
+          python3 scripts/wsclient-test-generator/TestGeneratorAgent.py $ARGS
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-secure
+          path: |
+            **/*TestResults_Iteration*.json
+            **/*FinalReport_*.md
+            **/*FailureReport_*.md
+            **/*BatchAnalysis_*.md
+            **/*ServerIssue_*.md

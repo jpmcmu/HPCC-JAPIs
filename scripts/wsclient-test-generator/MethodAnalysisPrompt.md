@@ -12,6 +12,7 @@
 1. **Core Functionality Tests (CFT)**: Basic operation, complete requests, data variations, typical workflows
 2. **Edge Case Tests (ECT)**: Boundary values, optional parameters, unusual inputs, performance limits  
 3. **Error Handling Tests (EHT)**: Invalid inputs, server-side errors, client-side errors
+4. **Connectivity Tests (CNT)**: Service reachability, authentication success/failure, endpoint validation
 
 **Dataset Integration:**
 - Review existing datasets from `generate-datasets.ecl` before defining tests
@@ -156,6 +157,7 @@ For each existing test found:
 - Core Functionality Tests covered: [count and brief description]
 - Edge Case Tests covered: [count and brief description]
 - Error Handling Tests covered: [count and brief description]
+- Connectivity Tests covered: [count and brief description]
 - **Gaps identified**: [List scenarios that are NOT covered by existing tests]
 
 **Important**: Any test scenario that is adequately covered by an existing test **MUST NOT** be included in the new test case plan (Step 7). Only generate test cases for scenarios that have gaps or no coverage.
@@ -206,6 +208,7 @@ Test cases must be organized into three primary categories with clearly labeled 
 - Core Functionality Tests: `CFT-001`, `CFT-002`, etc.
 - Edge Case Tests: `ECT-001`, `ECT-002`, etc.
 - Error Handling Tests: `EHT-001`, `EHT-002`, etc.
+- Connectivity Tests: `CNT-001`, `CNT-002`, etc.
 
 ##### A. Core Functionality Tests
 Tests that verify the method's primary purpose and expected normal operation:
@@ -244,21 +247,36 @@ Tests that verify proper handling of invalid inputs and error conditions:
   - Unexpected response formats
   - Communication failures
 
+##### D. Connectivity Tests
+Tests that validate the service is reachable and authentication behaves correctly.
+Generate at least one CNT test per method (more if auth behaviour varies):
+
+- **Reachability**: Method returns a non-null/non-exception response for a minimal valid request
+- **Valid auth**: Request succeeds when valid credentials are supplied (skip if environment is unsecured)
+- **Invalid auth**: Request returns an appropriate auth error for bad/empty credentials
+
 **Test Case Specification Format:**
 
 For each test case, provide:
 
 | Field | Description |
 |-------|-------------|
-| **Test ID** | Unique identifier (e.g., `CFT-001` for Core Functionality Test) |
-| **Category** | Core Functionality / Edge Case / Error Handling |
+| **Test ID** | Unique identifier (e.g., `CFT-001` for Core Functionality Test, `CNT-001` for Connectivity Test) |
+| **Category** | Core Functionality / Edge Case / Error Handling / Connectivity |
 | **Subcategory** | Specific classification from above |
 | **Description** | Brief summary of what is being tested |
+| **Environment Requirements** | Comma-separated list: `any`, `containerized`, `baremetal`, `secure` |
 | **Input Data** | Complete request fields and values |
 | **Dataset** | Either: existing dataset name (e.g., `~benchmark::integer::20KB`) OR `[NEW DATASET REQUIRED]` with specifications |
 | **Expected Output** | Response values, exception type, or error code |
 | **Pass Criteria** | Specific conditions that indicate success |
 | **Notes** | Additional context, dependencies, or setup requirements |
+
+**Environment requirements guidance:**
+- `any` — no special infrastructure needed; test runs in all environments
+- `containerized` — requires a K8s/Docker-deployed HPCC cluster
+- `baremetal` — requires a bare-metal/native HPCC installation
+- `secure` — requires an HPCC cluster with authentication/security plugin enabled
 
 **Dataset Requirements Format (for new datasets):**
 
