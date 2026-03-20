@@ -17,6 +17,12 @@ name: WsClient Test Generator Suite
 #   • Optionally set the ALLOWED_ACTORS secret (comma-separated GitHub usernames)
 #     for an additional actor allowlist check enforced in the workflow itself.
 #
+# Secrets required:
+#   • COPILOT_CLI_TOKEN — PAT (classic or fine-grained) for an account with an
+#     active GitHub Copilot subscription.  Used by setup-copilot-cli action.
+#     The standard GITHUB_TOKEN does NOT have Copilot API access.
+#   • ALLOWED_ACTORS (optional) — comma-separated actor allowlist.
+#
 # Outputs:
 #   • All result files committed to a new branch:
 #       test-results/<SERVICE_NAME>/<YYYYMMDD>-<run_id>
@@ -55,6 +61,11 @@ on:
         required: false
         default: "master"
         type: string
+      copilot_model:
+        description: "Copilot model for TestGeneratorAgent (e.g. claude-sonnet-4, gpt-4o). Leave blank for the Copilot CLI default."
+        required: false
+        default: ""
+        type: string
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Permissions: contents:write is required to push the results branch.
@@ -86,11 +97,6 @@ jobs:
 
     steps:
       - name: Check actor authorization
-        # Belt-and-suspenders: also verify actor against the ALLOWED_ACTORS
-        # secret (comma-separated usernames, e.g. "alice,bob").  If the secret
-        # is absent every actor is permitted (Environment gate is the primary
-        # control).  Set this secret in repo Settings → Secrets → Actions.
-        if: ${{ secrets.ALLOWED_ACTORS != '' }}
         run: |
           if ! echo "${{ secrets.ALLOWED_ACTORS }}" | tr ',' '\n' | grep -qx "${{ github.actor }}"; then
             echo "::error::Actor '${{ github.actor }}' is not in the ALLOWED_ACTORS list."
@@ -154,6 +160,14 @@ jobs:
         uses: actions/setup-python@v2
         with:
           python-version: "3.8"
+
+      - name: Setup GitHub Copilot CLI
+        uses: ./.github/actions/setup-copilot-cli
+        with:
+          copilot-pat: ${{ secrets.COPILOT_CLI_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          workflow-file: test-generator.yml
+          actor-whitelist: ${{ secrets.ALLOWED_ACTORS }}
 
       - name: Cache Maven packages
         uses: actions/cache@v3
@@ -225,6 +239,7 @@ jobs:
           METHOD_NAME: ${{ github.event.inputs.method_name }}
           PARALLEL_THREADS: ${{ github.event.inputs.parallel_threads }}
           OUTPUT_DIR: ${{ github.event.inputs.output_dir }}
+          COPILOT_MODEL: ${{ github.event.inputs.copilot_model }}
         run: |
           ARGS="$SERVICE_NAME"
           if [ -n "$METHOD_NAME" ]; then ARGS="$ARGS $METHOD_NAME"; fi
@@ -233,6 +248,7 @@ jobs:
           ARGS="$ARGS --start-from-step 4"
           ARGS="$ARGS --parallel-threads $PARALLEL_THREADS"
           ARGS="$ARGS --scenarios none"
+          if [ -n "$COPILOT_MODEL" ]; then ARGS="$ARGS --model $COPILOT_MODEL"; fi
 
           echo "Running: python3 scripts/wsclient-test-generator/TestGeneratorAgent.py $ARGS"
           python3 scripts/wsclient-test-generator/TestGeneratorAgent.py $ARGS
@@ -285,6 +301,14 @@ jobs:
         uses: actions/setup-python@v2
         with:
           python-version: "3.8"
+
+      - name: Setup GitHub Copilot CLI
+        uses: ./.github/actions/setup-copilot-cli
+        with:
+          copilot-pat: ${{ secrets.COPILOT_CLI_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          workflow-file: test-generator.yml
+          actor-whitelist: ${{ secrets.ALLOWED_ACTORS }}
 
       - name: Cache Maven packages
         uses: actions/cache@v3
@@ -379,6 +403,7 @@ jobs:
           SERVICE_NAME: ${{ github.event.inputs.service_name }}
           METHOD_NAME: ${{ github.event.inputs.method_name }}
           PARALLEL_THREADS: ${{ github.event.inputs.parallel_threads }}
+          COPILOT_MODEL: ${{ github.event.inputs.copilot_model }}
         run: |
           ARGS="$SERVICE_NAME"
           if [ -n "$METHOD_NAME" ]; then ARGS="$ARGS $METHOD_NAME"; fi
@@ -387,6 +412,7 @@ jobs:
           ARGS="$ARGS --start-from-step 4"
           ARGS="$ARGS --parallel-threads $PARALLEL_THREADS"
           ARGS="$ARGS --scenarios none"
+          if [ -n "$COPILOT_MODEL" ]; then ARGS="$ARGS --model $COPILOT_MODEL"; fi
 
           python3 scripts/wsclient-test-generator/TestGeneratorAgent.py $ARGS
 
@@ -429,6 +455,14 @@ jobs:
         uses: actions/setup-python@v2
         with:
           python-version: "3.8"
+
+      - name: Setup GitHub Copilot CLI
+        uses: ./.github/actions/setup-copilot-cli
+        with:
+          copilot-pat: ${{ secrets.COPILOT_CLI_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          workflow-file: test-generator.yml
+          actor-whitelist: ${{ secrets.ALLOWED_ACTORS }}
 
       - name: Cache Maven packages
         uses: actions/cache@v3
@@ -570,6 +604,7 @@ jobs:
           SERVICE_NAME: ${{ github.event.inputs.service_name }}
           METHOD_NAME: ${{ github.event.inputs.method_name }}
           PARALLEL_THREADS: ${{ github.event.inputs.parallel_threads }}
+          COPILOT_MODEL: ${{ github.event.inputs.copilot_model }}
         run: |
           ARGS="$SERVICE_NAME"
           if [ -n "$METHOD_NAME" ]; then ARGS="$ARGS $METHOD_NAME"; fi
@@ -578,6 +613,7 @@ jobs:
           ARGS="$ARGS --start-from-step 4"
           ARGS="$ARGS --parallel-threads $PARALLEL_THREADS"
           ARGS="$ARGS --scenarios none"
+          if [ -n "$COPILOT_MODEL" ]; then ARGS="$ARGS --model $COPILOT_MODEL"; fi
 
           python3 scripts/wsclient-test-generator/TestGeneratorAgent.py $ARGS
 
