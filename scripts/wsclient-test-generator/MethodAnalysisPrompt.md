@@ -249,8 +249,6 @@ Tests that verify proper handling of invalid inputs and error conditions:
 
 ##### D. Connectivity Tests
 Tests that validate the service is reachable and authentication behaves correctly.
-Generate at least one CNT test per method (more if auth behaviour varies):
-
 - **Reachability**: Method returns a non-null/non-exception response for a minimal valid request
 - **Valid auth**: Request succeeds when valid credentials are supplied (skip if environment is unsecured)
 - **Invalid auth**: Request returns an appropriate auth error for bad/empty credentials

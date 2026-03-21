@@ -80,22 +80,32 @@ permissions:
 jobs:
 
   # ───────────────────────────────────────────────────────────────────────────
-  # Job 1: Build — compile the project and upload the wsclient test-classes
+  # Single sequential job:
+  #   1. One-time setup (JDK, Python, Copilot CLI, Maven compile)
+  #   2. ENV: containerized (K8s/microk8s) → teardown
+  #   3. ENV: baremetal insecure (dpkg HPCC) → stay installed
+  #   4. ENV: baremetal secure (reconfigure htpasswdsecmgr) → stop
+  #   5. Aggregate cross-env reports (TestGeneratorAgent Step 5)
+  #   6. Commit results to branch
   # ───────────────────────────────────────────────────────────────────────────
-  build:
-    name: Build project
+  run-tests:
+    name: Build → Containerized → Baremetal → Secure → Aggregate
     runs-on: ubuntu-latest
     # Guard: only run on forks, never on the canonical upstream repo.
-    # Any fork will have a different github.repository value, so this
-    # condition is both portable and explicit.
     if: github.repository != 'hpcc-systems/hpcc4j'
     # ── ACCESS GATE ────────────────────────────────────────────────────────────
     # References the "test-runner" Environment.  Configure required reviewers
-    # in repo Settings → Environments → test-runner.  The workflow will pause
-    # here until an approved reviewer clicks "Approve and deploy".
+    # in repo Settings → Environments → test-runner.
     environment: test-runner
+    # Allow up to 6 hours for the full sequential run across all environments.
+    timeout-minutes: 360
+    # continue-on-error at the step level handles per-env failures gracefully.
+    # The job itself does not use continue-on-error so the commit/publish step
+    # still runs (it is covered by an explicit if: always() on that step).
 
     steps:
+      # ── ONE-TIME SETUP ──────────────────────────────────────────────────────
+
       - name: Check actor authorization
         run: |
           if ! echo "${{ secrets.ALLOWED_ACTORS }}" | tr ',' '\n' | grep -qx "${{ github.actor }}"; then
@@ -116,46 +126,6 @@ jobs:
         with:
           java-version: 11
 
-      - name: Cache Maven packages
-        uses: actions/cache@v3
-        with:
-          path: ~/.m2
-          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
-          restore-keys: ${{ runner.os }}-m2
-
-      - name: Compile project (skip tests)
-        run: mvn -B clean compile test-compile -DskipTests -pl wsclient -Dmaven.gpg.skip=true
-
-      - name: Archive compiled test sources
-        uses: actions/upload-artifact@v4
-        with:
-          name: wsclient-test-classes
-          path: |
-            wsclient/target/
-            wsclient/src/test/
-            wsclient/src/main/
-
-  # ───────────────────────────────────────────────────────────────────────────
-  # Job 2: Containerized (K8s / microk8s) environment
-  # ───────────────────────────────────────────────────────────────────────────
-  test-containerized:
-    name: Test — Containerized (K8s)
-    needs: build
-    runs-on: ubuntu-latest
-    continue-on-error: true
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          fetch-tags: true
-
-      - name: Setup JDK 11
-        uses: actions/setup-java@v1
-        with:
-          java-version: 11
-
       - name: Setup Python 3.8
         uses: actions/setup-python@v2
         with:
@@ -176,11 +146,10 @@ jobs:
           key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
           restore-keys: ${{ runner.os }}-m2
 
-      - name: Download compiled test classes
-        uses: actions/download-artifact@v4
-        with:
-          name: wsclient-test-classes
-          path: wsclient/
+      - name: Compile project (skip tests)
+        run: mvn -B clean compile test-compile -DskipTests -pl wsclient -Dmaven.gpg.skip=true
+
+      # ── ENV 1: CONTAINERIZED (K8s / microk8s) ──────────────────────────────
 
       - name: Setup microk8s
         uses: balchua/microk8s-actions@v0.3.2
@@ -189,33 +158,26 @@ jobs:
           addons: '["dns", "rbac", "hostpath-storage", "registry"]'
 
       - name: Deploy HPCC Platform (K8s)
+        id: k8s_deploy
+        continue-on-error: true
         env:
           HPCC_PLATFORM_REPO: ${{ github.event.inputs.hpcc_platform_repo }}
           HPCC_PLATFORM_BRANCH: ${{ github.event.inputs.hpcc_platform_branch }}
         run: |
-          # Install Helm
           curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-
-          # Add HPCC Helm repo
           helm repo add hpcc https://hpcc-systems.github.io/helm-chart/
           helm repo update
 
-          # Determine which chart version / custom values to use
-          if [ -n "$HPCC_PLATFORM_REPO" ]; then
-            echo "Using custom HPCC Platform: $HPCC_PLATFORM_REPO @ $HPCC_PLATFORM_BRANCH"
-          fi
-
-          # Deploy with minimal resources
           kubectl create namespace default --dry-run=client -o yaml | kubectl apply -f -
           helm install hpcc hpcc/hpcc \
             --namespace default \
             --wait --timeout 10m \
             --set global.image.pullPolicy=Always
 
-          # Wait for all pods to be ready
           kubectl wait --for=condition=ready pod --all --namespace default --timeout=300s
 
-      - name: Create environment config
+      - name: Create environment config — containerized
+        if: steps.k8s_deploy.outcome == 'success'
         run: |
           cat > environments.json <<'EOF'
           {
@@ -234,6 +196,8 @@ jobs:
           EOF
 
       - name: Run tests — containerized environment
+        if: steps.k8s_deploy.outcome == 'success'
+        continue-on-error: true
         env:
           SERVICE_NAME: ${{ github.event.inputs.service_name }}
           METHOD_NAME: ${{ github.event.inputs.method_name }}
@@ -253,7 +217,7 @@ jobs:
           echo "Running: python3 scripts/wsclient-test-generator/TestGeneratorAgent.py $ARGS"
           python3 scripts/wsclient-test-generator/TestGeneratorAgent.py $ARGS
 
-      - name: Collect HPCC logs
+      - name: Collect K8s logs
         if: always()
         run: |
           mkdir -p test-logs/containerized
@@ -261,72 +225,16 @@ jobs:
             kubectl logs -l app=$svc --namespace default > test-logs/containerized/${svc}.log 2>&1 || true
           done
 
-      # Internal ephemeral artifact — consumed only by publish-results job.
-      - name: Stage results for publish job
+      - name: Teardown K8s HPCC deployment
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-results-containerized
-          retention-days: 1
-          path: |
-            **/*TestResults_Iteration*.json
-            **/*FinalReport_*.md
-            **/*FailureReport_*.md
-            **/*BatchAnalysis_*.md
-            **/*ServerIssue_*.md
-            test-logs/containerized/
+        run: |
+          helm uninstall hpcc --namespace default --wait --timeout 5m || true
+          kubectl delete namespace default --wait=false || true
 
-  # ───────────────────────────────────────────────────────────────────────────
-  # Job 3: Baremetal (insecure) environment
-  # ───────────────────────────────────────────────────────────────────────────
-  test-baremetal:
-    name: Test — Baremetal (insecure)
-    needs: build
-    runs-on: ubuntu-latest
-    continue-on-error: true
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          fetch-tags: true
-
-      - name: Setup JDK 11
-        uses: actions/setup-java@v1
-        with:
-          java-version: 11
-
-      - name: Setup Python 3.8
-        uses: actions/setup-python@v2
-        with:
-          python-version: "3.8"
-
-      - name: Setup GitHub Copilot CLI
-        uses: ./.github/actions/setup-copilot-cli
-        with:
-          copilot-pat: ${{ secrets.COPILOT_CLI_TOKEN }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          workflow-file: test-generator.yml
-          actor-whitelist: ${{ secrets.ALLOWED_ACTORS }}
-
-      - name: Cache Maven packages
-        uses: actions/cache@v3
-        with:
-          path: ~/.m2
-          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
-          restore-keys: ${{ runner.os }}-m2
-
-      - name: Download compiled test classes
-        uses: actions/download-artifact@v4
-        with:
-          name: wsclient-test-classes
-          path: wsclient/
+      # ── ENV 2: BAREMETAL INSECURE ───────────────────────────────────────────
 
       - name: Extract HPCC Platform version
         id: hpcc_version
-        env:
-          BRANCH_NAME: "master"
         shell: python
         run: |
           import os, re, subprocess, sys
@@ -342,7 +250,6 @@ jobs:
 
           ver = get_tag_version("git tag --list 'hpcc4j_*-release' --sort=-v:refname | head -n 1")
           if ver is None:
-              # Fall back to a known stable version
               ver = [9, 6, 0]
 
           ver_str = ".".join(map(str, ver))
@@ -358,6 +265,8 @@ jobs:
               f.write(f"previousVersionURL={url(prev_str)}\n")
 
       - name: Install HPCC Platform
+        id: hpcc_install
+        continue-on-error: true
         run: |
           URL="${{ steps.hpcc_version.outputs.latestVersionURL }}"
           PREV="${{ steps.hpcc_version.outputs.previousVersionURL }}"
@@ -369,18 +278,21 @@ jobs:
           sudo /opt/HPCCSystems/etc/init.d/setupPKI
 
       - name: Start HPCC Platform
+        if: steps.hpcc_install.outcome == 'success'
         run: |
           export LANG="en_US.UTF-8"
           sudo update-locale
           sudo /etc/init.d/hpcc-init start
 
       - name: Add host file entries
+        if: steps.hpcc_install.outcome == 'success'
         run: |
           sudo sh -c "echo '127.0.0.1 eclwatch.default' >> /etc/hosts"
           sudo sh -c "echo '127.0.0.1 rowservice.default' >> /etc/hosts"
           sudo sh -c "echo '127.0.0.1 sql2ecl.default' >> /etc/hosts"
 
-      - name: Create environment config
+      - name: Create environment config — baremetal
+        if: steps.hpcc_install.outcome == 'success'
         run: |
           cat > environments.json <<'EOF'
           {
@@ -399,6 +311,8 @@ jobs:
           EOF
 
       - name: Run tests — baremetal environment
+        if: steps.hpcc_install.outcome == 'success'
+        continue-on-error: true
         env:
           SERVICE_NAME: ${{ github.event.inputs.service_name }}
           METHOD_NAME: ${{ github.event.inputs.method_name }}
@@ -416,106 +330,10 @@ jobs:
 
           python3 scripts/wsclient-test-generator/TestGeneratorAgent.py $ARGS
 
-      # Internal ephemeral artifact — consumed only by publish-results job.
-      - name: Stage results for publish job
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-results-baremetal
-          retention-days: 1
-          path: |
-            **/*TestResults_Iteration*.json
-            **/*FinalReport_*.md
-            **/*FailureReport_*.md
-            **/*BatchAnalysis_*.md
-            **/*ServerIssue_*.md
-
-  # ───────────────────────────────────────────────────────────────────────────
-  # Job 4: Baremetal — secure environment (htpasswdsecmgr)
-  # ───────────────────────────────────────────────────────────────────────────
-  test-secure:
-    name: Test — Baremetal (secure)
-    needs: build
-    runs-on: ubuntu-latest
-    continue-on-error: true
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          fetch-tags: true
-
-      - name: Setup JDK 11
-        uses: actions/setup-java@v1
-        with:
-          java-version: 11
-
-      - name: Setup Python 3.8
-        uses: actions/setup-python@v2
-        with:
-          python-version: "3.8"
-
-      - name: Setup GitHub Copilot CLI
-        uses: ./.github/actions/setup-copilot-cli
-        with:
-          copilot-pat: ${{ secrets.COPILOT_CLI_TOKEN }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          workflow-file: test-generator.yml
-          actor-whitelist: ${{ secrets.ALLOWED_ACTORS }}
-
-      - name: Cache Maven packages
-        uses: actions/cache@v3
-        with:
-          path: ~/.m2
-          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
-          restore-keys: ${{ runner.os }}-m2
-
-      - name: Download compiled test classes
-        uses: actions/download-artifact@v4
-        with:
-          name: wsclient-test-classes
-          path: wsclient/
-
-      - name: Extract HPCC Platform version
-        id: hpcc_version
-        shell: python
-        run: |
-          import os, re, subprocess
-
-          def get_tag_version(cmd):
-              pattern = re.compile(r'.*hpcc4j_([0-9]+\.[0-9]+\.[0-9]+).*')
-              proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, shell=True)
-              out, _ = proc.communicate()
-              match = pattern.match(str(out))
-              if match:
-                  return list(map(int, match.group(1).split('.')))
-              return None
-
-          ver = get_tag_version("git tag --list 'hpcc4j_*-release' --sort=-v:refname | head -n 1") or [9, 6, 0]
-          ver_str = ".".join(map(str, ver))
-          prev_str = ".".join(map(str, [ver[0], ver[1], max(0, ver[2]-2)]))
-
-          base = "https://github.com/hpcc-systems/HPCC-Platform/releases/download"
-          def url(v): return f"{base}/community_{v}-1/hpccsystems-platform-community_{v}-1jammy_amd64_withsymbols.deb"
-
-          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-              f.write(f"latestVersion={ver_str}\n")
-              f.write(f"latestVersionURL={url(ver_str)}\n")
-              f.write(f"previousVersionURL={url(prev_str)}\n")
-
-      - name: Install HPCC Platform
-        run: |
-          URL="${{ steps.hpcc_version.outputs.latestVersionURL }}"
-          PREV="${{ steps.hpcc_version.outputs.previousVersionURL }}"
-          if wget -q --spider "$URL"; then wget -q "$URL"
-          elif wget -q --spider "$PREV"; then wget -q "$PREV"
-          else echo "Unable to find HPCC Platform package"; exit 1; fi
-          sudo apt-get update -q
-          sudo dpkg -i hpccsystems-platform-community_*.deb || sudo apt-get -f install -y
-          sudo /opt/HPCCSystems/etc/init.d/setupPKI
+      # ── ENV 3: BAREMETAL SECURE (reuse the same HPCC install) ──────────────
 
       - name: Generate htpasswd credentials
+        if: steps.hpcc_install.outcome == 'success'
         run: |
           HPCC_USER=$(openssl rand -hex 8)
           HPCC_PASS=$(openssl rand -hex 16)
@@ -525,6 +343,7 @@ jobs:
           sudo htpasswd -c -b /etc/HPCCSystems/.htpasswd "$HPCC_USER" "$HPCC_PASS"
 
       - name: Configure htpasswdsecmgr
+        if: steps.hpcc_install.outcome == 'success'
         shell: python
         run: |
           import xml.etree.ElementTree as ET
@@ -563,25 +382,18 @@ jobs:
 
           tree.write('tmp_environment.xml')
 
-      - name: Apply environment.xml
+      - name: Apply htpasswdsecmgr config and restart HPCC
+        if: steps.hpcc_install.outcome == 'success'
         run: |
           sudo mv /etc/HPCCSystems/environment.xml /etc/HPCCSystems/environment.xml.bak
           sudo mv tmp_environment.xml /etc/HPCCSystems/environment.xml
           sudo chown hpcc:hpcc /etc/HPCCSystems/environment.xml
-
-      - name: Start HPCC Platform
-        run: |
           export LANG="en_US.UTF-8"
           sudo update-locale
-          sudo /etc/init.d/hpcc-init start
+          sudo /etc/init.d/hpcc-init restart
 
-      - name: Add host file entries
-        run: |
-          sudo sh -c "echo '127.0.0.1 eclwatch.default' >> /etc/hosts"
-          sudo sh -c "echo '127.0.0.1 rowservice.default' >> /etc/hosts"
-          sudo sh -c "echo '127.0.0.1 sql2ecl.default' >> /etc/hosts"
-
-      - name: Create environment config
+      - name: Create environment config — secure
+        if: steps.hpcc_install.outcome == 'success'
         run: |
           cat > environments.json <<EOF
           {
@@ -600,6 +412,8 @@ jobs:
           EOF
 
       - name: Run tests — secure environment
+        if: steps.hpcc_install.outcome == 'success'
+        continue-on-error: true
         env:
           SERVICE_NAME: ${{ github.event.inputs.service_name }}
           METHOD_NAME: ${{ github.event.inputs.method_name }}
@@ -617,64 +431,33 @@ jobs:
 
           python3 scripts/wsclient-test-generator/TestGeneratorAgent.py $ARGS
 
-      # Internal ephemeral artifact — consumed only by publish-results job.
-      - name: Stage results for publish job
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-results-secure
-          retention-days: 1
-          path: |
-            **/*TestResults_Iteration*.json
-            **/*FinalReport_*.md
-            **/*FailureReport_*.md
-            **/*BatchAnalysis_*.md
-            **/*ServerIssue_*.md
+      - name: Stop HPCC Platform
+        if: always() && steps.hpcc_install.outcome == 'success'
+        run: sudo /etc/init.d/hpcc-init stop || true
 
-  # ───────────────────────────────────────────────────────────────────────────
-  # Job 5: Publish results — commit all test output to a new feature branch
-  # ───────────────────────────────────────────────────────────────────────────
-  publish-results:
-    name: Publish results to branch
-    # Run even when test jobs fail so partial results are always committed.
-    # The repo guard is repeated here because `always()` bypasses the `needs`
-    # gate that would otherwise propagate the fork check from `build`.
-    if: always() && github.repository != 'hpcc-systems/hpcc4j'
-    needs: [test-containerized, test-baremetal, test-secure]
-    runs-on: ubuntu-latest
+      # ── STEP 5: AGGREGATE CROSS-ENV REPORTS ────────────────────────────────
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          # Use GITHUB_TOKEN — no PAT required.  The token already has
-          # contents:write because of the top-level permissions block.
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Download containerized results
-        uses: actions/download-artifact@v4
-        with:
-          name: test-results-containerized
-          path: test-results/containerized/
-        # Tolerate missing artifact when the job was skipped/cancelled.
+      - name: Aggregate cross-environment reports (Step 5)
         continue-on-error: true
+        env:
+          SERVICE_NAME: ${{ github.event.inputs.service_name }}
+          METHOD_NAME: ${{ github.event.inputs.method_name }}
+          COPILOT_MODEL: ${{ github.event.inputs.copilot_model }}
+        run: |
+          ARGS="$SERVICE_NAME"
+          if [ -n "$METHOD_NAME" ]; then ARGS="$ARGS $METHOD_NAME"; fi
+          ARGS="$ARGS --hpcc-source /tmp/hpcc-source-placeholder"
+          ARGS="$ARGS --start-from-step 5"
+          ARGS="$ARGS --scenarios none"
+          if [ -n "$COPILOT_MODEL" ]; then ARGS="$ARGS --model $COPILOT_MODEL"; fi
 
-      - name: Download baremetal results
-        uses: actions/download-artifact@v4
-        with:
-          name: test-results-baremetal
-          path: test-results/baremetal/
-        continue-on-error: true
+          echo "Running aggregate reports step..."
+          python3 scripts/wsclient-test-generator/TestGeneratorAgent.py $ARGS
 
-      - name: Download secure results
-        uses: actions/download-artifact@v4
-        with:
-          name: test-results-secure
-          path: test-results/secure/
-        continue-on-error: true
+      # ── PUBLISH: COMMIT RESULTS TO BRANCH ──────────────────────────────────
 
       - name: Commit and push results branch
+        if: always()
         id: push_branch
         env:
           SERVICE_NAME: ${{ github.event.inputs.service_name }}
@@ -688,12 +471,19 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # Create the results branch off the current HEAD so it contains the
-          # test class source that was used during this run.
           git checkout -b "$BRANCH"
 
-          # Stage everything under test-results/
-          git add test-results/ 2>/dev/null || true
+          # Stage all result artifacts produced during this run
+          git add \
+            "**/*TestResults_Iteration*.json" \
+            "**/*FinalReport_*.md" \
+            "**/*FailureReport_*.md" \
+            "**/*BatchAnalysis_*.md" \
+            "**/*ServerIssue_*.md" \
+            "**/*UnverifiedServerIssuesReport_*.md" \
+            "**/*AggregateReport_*.md" \
+            "test-logs/" \
+            2>/dev/null || true
 
           if git diff --cached --quiet; then
             echo "No result files found — nothing to commit."

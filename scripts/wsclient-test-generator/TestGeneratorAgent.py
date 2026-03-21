@@ -112,10 +112,11 @@ def parse_arguments():
                         help="Skip Step 1 (analysis generation) if analysis file already exists")
     parser.add_argument("--start-from-step",
                         type=int,
-                        choices=[0, 1, 2, 3, 4],
+                        choices=[0, 1, 2, 3, 4, 5],
                         default=0,
                         help="Start from a specific step (0=Service Discovery [full-service only], "
-                             "1=Analysis, 2=Test Generation, 3=Build, 4=Test Execution)")
+                             "1=Analysis, 2=Test Generation, 3=Build, 4=Test Execution, "
+                             "5=Aggregate cross-env reports [reads existing per-env output files])")
     parser.add_argument("--scenarios",
                         dest="TESTING_SCENARIOS",
                         default=None,
@@ -241,6 +242,7 @@ FIX_TEST_COMPILATION_PROMPT_FILE = os.path.join(os.path.dirname(__file__), "FixT
 BATCH_FAILURE_ANALYSIS_PROMPT_FILE = os.path.join(os.path.dirname(__file__), "BatchFailureAnalysisPrompt.md")
 FINAL_REPORT_PROMPT_FILE = os.path.join(os.path.dirname(__file__), "FinalReportPrompt.md")
 UNVERIFIED_SERVER_ISSUES_REPORT_PROMPT_FILE = os.path.join(os.path.dirname(__file__), "UnverifiedServerIssuesReportPrompt.md")
+AGGREGATE_REPORT_PROMPT_FILE = os.path.join(os.path.dirname(__file__), "AggregateReportPrompt.md")
 ANALYSIS_FILE = os.path.join(OUTPUT_DIR, f"{SERVICE_NAME}.{METHOD_NAME}Analysis_{DATESTAMP}.md")
 EXPECTED_RESULTS_FILE = os.path.join(OUTPUT_DIR, f"{SERVICE_NAME}.{METHOD_NAME}ExpectedTestResults_{DATESTAMP}.md")
 TEST_FILE_GLOB = f"**/{SERVICE_NAME}ClientTest.java"
@@ -1552,5 +1554,59 @@ if START_FROM_STEP <= 4:
     print(f"   - {SERVICE_NAME}.{METHOD_NAME}TestResults_Iteration*_{DATESTAMP}.json")
 else:
     print(f"⏭️  Skipping Step 4: Not requested")
+
+# === Step 5: Aggregate cross-environment reports ===
+if START_FROM_STEP <= 5:
+    print("\n📊 Step 5: Aggregating cross-environment reports...")
+
+    # Locate all per-env FinalReport files produced this run (by datestamp)
+    final_report_files = sorted(glob.glob(
+        os.path.join(OUTPUT_DIR, f"*FinalReport_*{DATESTAMP}*.md")
+    ))
+    results_json_files = sorted(glob.glob(
+        os.path.join(OUTPUT_DIR, f"*TestResults_Iteration*{DATESTAMP}*.json")
+    ))
+    server_issue_files = sorted(glob.glob(
+        os.path.join(OUTPUT_DIR, f"*UnverifiedServerIssuesReport_*{DATESTAMP}*.md")
+    ))
+
+    if not final_report_files:
+        print("⚠️  No per-env FinalReport files found in output dir — skipping aggregate report.")
+    elif not os.path.exists(AGGREGATE_REPORT_PROMPT_FILE):
+        print(f"⚠️  AggregateReportPrompt.md not found at {AGGREGATE_REPORT_PROMPT_FILE} — skipping.")
+    else:
+        aggregate_report_path = os.path.join(
+            OUTPUT_DIR, f"{SERVICE_NAME}.AllEnvAggregateReport_{DATESTAMP}.md"
+        )
+        print(f"📋 Per-env FinalReports found: {len(final_report_files)}")
+        print(f"📋 Per-env TestResults JSONs found: {len(results_json_files)}")
+        if server_issue_files:
+            print(f"🔴 Per-env ServerIssues reports found: {len(server_issue_files)}")
+
+        copilot_generate(
+            AGGREGATE_REPORT_PROMPT_FILE,
+            aggregate_report_path,
+            {
+                "SERVICE_NAME": SERVICE_NAME,
+                "DATESTAMP": DATESTAMP,
+                "OUTPUT_DIR": OUTPUT_DIR,
+                "PER_ENV_FINAL_REPORTS": "\n".join(f"- {f}" for f in final_report_files),
+                "PER_ENV_RESULTS_JSONS": "\n".join(f"- {f}" for f in results_json_files),
+                "PER_ENV_SERVER_ISSUE_FILES": "\n".join(f"- {f}" for f in server_issue_files)
+                    if server_issue_files else "(none)",
+            },
+        )
+
+        if os.path.exists(aggregate_report_path):
+            with open(aggregate_report_path, 'r') as f:
+                content = f.read()
+            if f"*Generated: {DATESTAMP}*" not in content:
+                with open(aggregate_report_path, 'a') as f:
+                    f.write(f"\n\n---\n*Generated: {DATESTAMP}*\n")
+            print(f"✅ Aggregate report created: {aggregate_report_path}")
+        else:
+            print(f"⚠️  Aggregate report not created at expected path: {aggregate_report_path}")
+else:
+    print(f"⏭️  Skipping Step 5: Not requested")
 
 print("\n✅ Process complete!")
