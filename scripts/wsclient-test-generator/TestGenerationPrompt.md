@@ -172,16 +172,40 @@ Additionally, create a JSON file named ${TEST_METADATA_FILE} with the following 
 
 **Field notes:**
 - `label` — must exactly match the label in the comment block (e.g., `CFT-001-getFileDataColumns`)
-- `category` — use the prefix: `CFT`, `ECT`, `EHT`, or `CNT`
-- `environmentRequirements` — JSON array of strings matching the `<p>Environment requirements:` line.
-  Use `["any"]` when the test runs everywhere. Allowed values: `any`, `containerized`, `baremetal`, `secure`.
+- `category` — use the **short prefix only**: `CFT`, `ECT`, `EHT`, or `CNT`. Never use "basic", "connectivity", or any other freeform string.
+- `environmentRequirements` — **MANDATORY. Must never be omitted.** Copy the exact environment list directly from the `<p>Environment requirements:` Javadoc line on that test method.
+  - Allowed values: `"any"`, `"containerized"`, `"baremetal"`, `"secure"`
+  - Use `["any"]` when the comment says "any" (test runs in all environments)
+  - Example: Javadoc says `<p>Environment requirements: containerized, baremetal` → JSON: `["containerized", "baremetal"]`
+  - Example: Javadoc says `<p>Environment requirements: secure` → JSON: `["secure"]`
+  - Example: Javadoc says `<p>Environment requirements: any` → JSON: `["any"]`
+- `requiredDataset` — dataset path with `~` prefix, or exactly `"N/A"` if no dataset needed. **Never omit this field.**
+
+**Default environment requirements by category** (use these when no specific env constraint applies):
+
+| Category | Default `environmentRequirements` | Rationale |
+|----------|----------------------------------|-----------|
+| `CNT` | `["any"]` | Connectivity checks need no special cluster setup |
+| `CFT` | `["containerized", "baremetal"]` | Core functional tests need a real cluster but not security |
+| `ECT` | `["containerized", "baremetal"]` | Edge cases similarly need real cluster access |
+| `EHT` input validation | `["any"]` | Input validation is env-independent |
+| `EHT` auth/permission tests | `["secure"]` | Auth error tests require security-enabled cluster |
+
+> ⚠️ **REQUIRED BEFORE SAVING THE JSON**: Review every single entry in the `tests` array and verify:
+> 1. `environmentRequirements` is present and non-null on every entry
+> 2. `category` is one of `CFT`, `ECT`, `EHT`, `CNT` — no other values allowed
+> 3. `label` matches the Javadoc comment exactly
+> 4. `testName` matches the Java method name exactly (no typos, no extra suffixes)
+>
+> A metadata entry with a missing or wrong `environmentRequirements` will cause the test to
+> run in the wrong environment (or not run at all) during CI. **Every field is required.**
 
 List ALL test methods you create in this JSON file. This metadata will be used to:
 1. Run each test individually using: mvn -B --activate-profiles jenkins-on-demand,remote-test 
    -Dhpccconn=http://eclwatch.default:8010 -Dwssqlconn=http://sql2ecl.default:8510 
    -Dtest=${SERVICE_NAME}ClientTest#<testName> test
 2. Track test results and categorize failures
-3. Filter tests by environment at runtime (--env flag)
+3. Filter tests by environment at runtime (--env flag) — **`environmentRequirements` drives this filtering**
 4. Generate comprehensive test reports
 
 Ensure the testName values exactly match the method names in the test class.

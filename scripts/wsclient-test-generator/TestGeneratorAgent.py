@@ -1212,6 +1212,15 @@ if START_FROM_STEP <= 4:
             sys.exit(1)
     else:
         print(f"✅ Found {len(tests_to_run)} tests to run")
+        # Warn about metadata quality issues that affect env-filtering
+        missing_env_req = [t.get("testName", "?") for t in tests_to_run if not t.get("environmentRequirements")]
+        if missing_env_req:
+            print(f"⚠️  {len(missing_env_req)} test(s) have no 'environmentRequirements' in metadata "
+                  f"— they will run in ALL environments regardless of --env filter.")
+            if len(missing_env_req) <= 10:
+                print(f"   Affected: {', '.join(missing_env_req)}")
+            else:
+                print(f"   First 10: {', '.join(missing_env_req[:10])} ...")
         # Find the test file path
         test_file_matches = glob.glob(TEST_FILE_GLOB, recursive=True)
         if not test_file_matches:
@@ -1279,14 +1288,22 @@ if START_FROM_STEP <= 4:
             print("🔓 No authentication credentials configured")
 
         # Filter tests by environmentRequirements when an env filter is active.
-        # Tests with no environmentRequirements field (or empty list) are run
-        # in every environment so that existing metadata stays compatible.
+        # A test is included in the run when ANY of the following is true:
+        #   1. environmentRequirements is missing or empty (backward-compat: run everywhere)
+        #   2. environmentRequirements contains "any"  (explicit wildcard)
+        #   3. environmentRequirements contains env.name (explicit match)
+        # Tests whose environmentRequirements list only contains OTHER env names are skipped.
         if ENV_FILTER:
+            env_reqs = lambda t: t.get("environmentRequirements") or []
             env_tests = [
                 t for t in tests_to_run
-                if not t.get("environmentRequirements") or env.name in t.get("environmentRequirements", [])
+                if not env_reqs(t)
+                or "any" in env_reqs(t)
+                or env.name in env_reqs(t)
             ]
-            print(f"🔍 Tests matching environment '{env.name}': {len(env_tests)} / {len(tests_to_run)}")
+            skipped = len(tests_to_run) - len(env_tests)
+            print(f"🔍 Tests matching environment '{env.name}': {len(env_tests)} / {len(tests_to_run)}"
+                  + (f" ({skipped} skipped — wrong env)" if skipped else ""))
         else:
             env_tests = tests_to_run[:]
 
