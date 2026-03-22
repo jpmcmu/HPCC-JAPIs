@@ -160,25 +160,22 @@ jobs:
         env:
           SERVICE_NAME: ${{ github.event.inputs.service_name }}
           METHOD_NAME: ${{ github.event.inputs.method_name }}
-          OUTPUT_DIR_INPUT: ${{ github.event.inputs.output_dir }}
           HPCC_PLATFORM_REPO: ${{ github.event.inputs.hpcc_platform_repo }}
           COPILOT_MODEL: ${{ github.event.inputs.copilot_model }}
         run: |
           ARGS="$SERVICE_NAME"
           if [ -n "$METHOD_NAME" ]; then ARGS="$ARGS $METHOD_NAME"; fi
 
-          # If an existing output dir was supplied, skip analysis/generation and only build
-          if [ -n "$OUTPUT_DIR_INPUT" ]; then
+          if [ -n "$HPCC_PLATFORM_REPO" ]; then
+            # Platform source was checked out — run full analysis + generation + build (steps 0-3)
+            ARGS="$ARGS --hpcc-source ./HPCC-Platform"
+          else
+            # No platform source — test class must already exist; skip to build-only (step 3)
             ARGS="$ARGS --start-from-step 3"
           fi
+
           ARGS="$ARGS --end-at-step 3"
           ARGS="$ARGS --scenarios none"
-
-          # Pass HPCC Platform source only if it was checked out
-          if [ -n "$HPCC_PLATFORM_REPO" ]; then
-            ARGS="$ARGS --hpcc-source ./HPCC-Platform"
-          fi
-
           if [ -n "$COPILOT_MODEL" ]; then ARGS="$ARGS --model $COPILOT_MODEL"; fi
 
           echo "Running: python3 scripts/wsclient-test-generator/TestGeneratorAgent.py $ARGS"
