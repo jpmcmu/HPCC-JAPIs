@@ -176,6 +176,7 @@ jobs:
 
           ARGS="$ARGS --end-at-step 3"
           ARGS="$ARGS --scenarios none"
+          ARGS="$ARGS --ci"
           if [ -n "$COPILOT_MODEL" ]; then ARGS="$ARGS --model $COPILOT_MODEL"; fi
 
           echo "Running: python3 scripts/wsclient-test-generator/TestGeneratorAgent.py $ARGS"
@@ -243,6 +244,7 @@ jobs:
           ARGS="$ARGS --start-from-step 4 --end-at-step 4"
           ARGS="$ARGS --parallel-threads $PARALLEL_THREADS"
           ARGS="$ARGS --scenarios none"
+          ARGS="$ARGS --ci"
           if [ -n "$COPILOT_MODEL" ]; then ARGS="$ARGS --model $COPILOT_MODEL"; fi
 
           echo "Running: python3 scripts/wsclient-test-generator/TestGeneratorAgent.py $ARGS"
@@ -356,6 +358,7 @@ jobs:
           ARGS="$ARGS --start-from-step 4 --end-at-step 4"
           ARGS="$ARGS --parallel-threads $PARALLEL_THREADS"
           ARGS="$ARGS --scenarios none"
+          ARGS="$ARGS --ci"
           if [ -n "$COPILOT_MODEL" ]; then ARGS="$ARGS --model $COPILOT_MODEL"; fi
 
           python3 scripts/wsclient-test-generator/TestGeneratorAgent.py $ARGS
@@ -456,6 +459,7 @@ jobs:
           ARGS="$ARGS --start-from-step 4 --end-at-step 4"
           ARGS="$ARGS --parallel-threads $PARALLEL_THREADS"
           ARGS="$ARGS --scenarios none"
+          ARGS="$ARGS --ci"
           if [ -n "$COPILOT_MODEL" ]; then ARGS="$ARGS --model $COPILOT_MODEL"; fi
 
           python3 scripts/wsclient-test-generator/TestGeneratorAgent.py $ARGS
@@ -477,6 +481,7 @@ jobs:
           if [ -n "$METHOD_NAME" ]; then ARGS="$ARGS $METHOD_NAME"; fi
           ARGS="$ARGS --start-from-step 5"
           ARGS="$ARGS --scenarios none"
+          ARGS="$ARGS --ci"
           if [ -n "$COPILOT_MODEL" ]; then ARGS="$ARGS --model $COPILOT_MODEL"; fi
 
           echo "Running aggregate reports step..."

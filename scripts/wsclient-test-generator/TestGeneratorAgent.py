@@ -152,9 +152,38 @@ def parse_arguments():
                              "Useful for running only generation+build (--end-at-step 3) "
                              "before running per-environment test steps separately. "
                              "(default: 5 = run all steps)")
+    parser.add_argument("--ci",
+                        action="store_true",
+                        help="Run in non-interactive CI mode. All interactive prompts will "
+                             "either use safe defaults or abort with an error instead of "
+                             "blocking on user input.")
     return parser.parse_args()
 
 args = parse_arguments()
+
+# Non-interactive CI mode: set via --ci flag.
+IS_CI = args.ci
+if IS_CI:
+    print("ℹ️  CI mode enabled (--ci). All interactive prompts will either use defaults or abort.")
+
+
+def _ci_input(prompt: str, ci_default: str = "", ci_fail_msg: str = "") -> str:
+    """Drop-in replacement for input() that is safe in CI.
+
+    If running interactively, delegates to the real input().
+    If running non-interactively:
+      - If ci_fail_msg is provided, prints it and exits with code 1.
+      - Otherwise returns ci_default silently.
+    """
+    if not IS_CI:
+        return input(prompt)
+    if ci_fail_msg:
+        print(f"❌ {ci_fail_msg}")
+        sys.exit(1)
+    print(f"[CI] Skipping prompt '{prompt.strip()}' — using default: '{ci_default}'")
+    return ci_default
+
+
 SERVICE_NAME = args.SERVICE_NAME
 METHOD_NAME = args.METHOD_NAME
 FULL_SERVICE_MODE = (METHOD_NAME is None)
@@ -177,7 +206,7 @@ else:
     print("   Enter comma-separated scenarios to focus test generation on.")
     print("   Example: invalid credentials, empty input, large result sets, concurrent access")
     print("   Press Enter to skip and use default scenario coverage.")
-    _user_scenarios = input("   Scenarios: ").strip()
+    _user_scenarios = _ci_input("   Scenarios: ", ci_default="").strip()
     TESTING_SCENARIOS = _user_scenarios
 
 if TESTING_SCENARIOS:
@@ -235,7 +264,11 @@ if START_FROM_STEP <= 2:
     esp_dir = os.path.join(HPCC_SOURCE_DIR, "esp")
     if not os.path.exists(esp_dir):
         print(f"⚠️  Warning: '{esp_dir}' not found. Are you sure this is the HPCC Platform source directory?")
-        response = input("Continue anyway? (y/N): ")
+        response = _ci_input(
+            "Continue anyway? (y/N): ",
+            ci_fail_msg=f"esp directory not found at '{esp_dir}'. "
+                        "Verify --hpcc-source points to a valid HPCC Platform checkout."
+        )
         if response.lower() != 'y':
             sys.exit(1)
     print(f"✅ Using HPCC Platform source: {HPCC_SOURCE_DIR}")
@@ -591,12 +624,14 @@ def copilot_generate(prompt_file, output_file, variables=None):
         print(f"\n⚠️  Warning: Expected output file {output_file} was not created.")
         print(f"Expected location: {os.path.abspath(output_file)}")
         print("\nCopilot may have encountered permission issues or the file may be in a different location.")
-        print("Options:")
-        print("  1. Press Enter if you created the file manually")
-        print("  2. Press Ctrl+C to exit and fix the issue")
-        input("\nPress Enter to continue once the file has been created...")
-        
-        # Check again after user confirmation
+        _ci_input(
+            "\nPress Enter to continue once the file has been created...",
+            ci_fail_msg=f"Expected output file was not created: {os.path.abspath(output_file)}. "
+                        "Copilot exited without producing the file. "
+                        "Check the Copilot CLI output above for errors."
+        )
+
+        # Check again after user confirmation (interactive mode only reaches here)
         if not os.path.exists(output_file):
             print(f"❌ Error: File {output_file} still not found at {os.path.abspath(output_file)}")
             print("Exiting. Please create the file manually and restart from this step.")
