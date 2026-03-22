@@ -80,8 +80,11 @@ def parse_arguments():
                         help="Name of the method to test. If omitted, generates tests for ALL business methods.")
     parser.add_argument("--hpcc-source", "-s", 
                         dest="HPCC_SOURCE_DIR",
-                        required=True,
-                        help="Path to HPCC Platform source code directory (e.g., ../HPCC-Platform)")
+                        required=False,
+                        default=None,
+                        help="Path to HPCC Platform source code directory (e.g., ../HPCC-Platform). "
+                             "Required when running steps 0-2 (analysis/test generation). "
+                             "Optional when starting from step 3 or later.")
     parser.add_argument("--model", "-m",
                         dest="COPILOT_MODEL",
                         default=None,
@@ -141,6 +144,14 @@ def parse_arguments():
                         default=1,
                         help="Number of parallel threads used to execute individual tests (default: 1 = sequential). "
                              "Set to a value > 1 to run tests concurrently and speed up Step 4.")
+    parser.add_argument("--end-at-step",
+                        type=int,
+                        choices=[0, 1, 2, 3, 4, 5],
+                        default=5,
+                        help="Stop after completing this step (inclusive). "
+                             "Useful for running only generation+build (--end-at-step 3) "
+                             "before running per-environment test steps separately. "
+                             "(default: 5 = run all steps)")
     return parser.parse_args()
 
 args = parse_arguments()
@@ -148,9 +159,10 @@ SERVICE_NAME = args.SERVICE_NAME
 METHOD_NAME = args.METHOD_NAME
 FULL_SERVICE_MODE = (METHOD_NAME is None)
 COPILOT_MODEL = args.COPILOT_MODEL
-HPCC_SOURCE_DIR = os.path.abspath(args.HPCC_SOURCE_DIR)  # Convert to absolute path
+HPCC_SOURCE_DIR = os.path.abspath(args.HPCC_SOURCE_DIR) if args.HPCC_SOURCE_DIR else None
 SKIP_ANALYSIS = args.skip_analysis
 START_FROM_STEP = args.start_from_step
+END_AT_STEP = args.end_at_step
 ENV_CONFIG_FILE = args.ENV_CONFIG
 ENV_FILTER = args.ENV_FILTER
 PARALLEL_THREADS = max(1, args.PARALLEL_THREADS)
@@ -211,20 +223,31 @@ else:
 if COPILOT_MODEL:
     print(f"🤖 Using Copilot model: {COPILOT_MODEL}")
 
-# Validate that the HPCC source directory exists
-if not os.path.exists(HPCC_SOURCE_DIR):
-    print(f"❌ Error: HPCC Platform source directory not found: {HPCC_SOURCE_DIR}")
-    sys.exit(1)
-
-# Validate that it looks like an HPCC Platform directory
-esp_dir = os.path.join(HPCC_SOURCE_DIR, "esp")
-if not os.path.exists(esp_dir):
-    print(f"⚠️  Warning: '{esp_dir}' not found. Are you sure this is the HPCC Platform source directory?")
-    response = input("Continue anyway? (y/N): ")
-    if response.lower() != 'y':
+# HPCC source is required for steps 0-2 (analysis/test generation) but not for 3-5
+if START_FROM_STEP <= 2:
+    if HPCC_SOURCE_DIR is None:
+        print(f"❌ Error: --hpcc-source is required when running steps 0-2 (analysis/test generation).")
         sys.exit(1)
-
-print(f"✅ Using HPCC Platform source: {HPCC_SOURCE_DIR}")
+    if not os.path.exists(HPCC_SOURCE_DIR):
+        print(f"❌ Error: HPCC Platform source directory not found: {HPCC_SOURCE_DIR}")
+        sys.exit(1)
+    # Validate that it looks like an HPCC Platform directory
+    esp_dir = os.path.join(HPCC_SOURCE_DIR, "esp")
+    if not os.path.exists(esp_dir):
+        print(f"⚠️  Warning: '{esp_dir}' not found. Are you sure this is the HPCC Platform source directory?")
+        response = input("Continue anyway? (y/N): ")
+        if response.lower() != 'y':
+            sys.exit(1)
+    print(f"✅ Using HPCC Platform source: {HPCC_SOURCE_DIR}")
+else:
+    if HPCC_SOURCE_DIR:
+        if not os.path.exists(HPCC_SOURCE_DIR):
+            print(f"❌ Error: HPCC Platform source directory not found: {HPCC_SOURCE_DIR}")
+            sys.exit(1)
+        print(f"✅ Using HPCC Platform source: {HPCC_SOURCE_DIR}")
+    else:
+        HPCC_SOURCE_DIR = ""  # Use empty string for any downstream path joins
+        print(f"ℹ️  No HPCC Platform source specified (not required for steps >= 3)")
 
 # Create output directory for all test generation artifacts
 if FULL_SERVICE_MODE:
@@ -1180,6 +1203,12 @@ if START_FROM_STEP <= 3:
 else:
     print(f"⏭️  Skipping Step 3: Starting from Step {START_FROM_STEP}")
 
+# Early-exit if requested
+if END_AT_STEP <= 3:
+    print(f"\n🏁 Stopping after Step 3 (--end-at-step {END_AT_STEP})")
+    print("\n✅ Process complete!")
+    sys.exit(0)
+
 # === Step 4: Run Tests with Iterative Failure Analysis ===
 if START_FROM_STEP <= 4:
     print("🚀 Step 4: Running tests with comprehensive failure analysis...")
@@ -1571,6 +1600,12 @@ if START_FROM_STEP <= 4:
     print(f"   - {SERVICE_NAME}.{METHOD_NAME}TestResults_Iteration*_{DATESTAMP}.json")
 else:
     print(f"⏭️  Skipping Step 4: Not requested")
+
+# Early-exit if requested
+if END_AT_STEP <= 4:
+    print(f"\n🏁 Stopping after Step 4 (--end-at-step {END_AT_STEP})")
+    print("\n✅ Process complete!")
+    sys.exit(0)
 
 # === Step 5: Aggregate cross-environment reports ===
 if START_FROM_STEP <= 5:

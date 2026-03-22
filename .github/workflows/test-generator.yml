@@ -6,9 +6,10 @@ name: WsClient Test Generator Suite
 # secure (baremetal + authentication).
 #
 # Prerequisites:
-#   • The test class for SERVICE_NAME must already be generated and committed.
-#     Run TestGeneratorAgent.py locally (steps 0–3) first, commit the resulting
-#     *ClientTest.java, then trigger this workflow.
+#   • HPCC Platform source (optional): provide hpcc_platform_repo + hpcc_platform_branch
+#     to have the workflow run analysis + test generation (steps 0-3) automatically.
+#     Without a source repo the test class for SERVICE_NAME must already exist in the
+#     repository (i.e. steps 0-3 were run locally and the result was committed).
 #
 # Access control (REQUIRED SETUP — repo admin):
 #   • Create a GitHub Environment named "test-runner" in repo Settings →
@@ -81,11 +82,11 @@ jobs:
 
   # ───────────────────────────────────────────────────────────────────────────
   # Single sequential job:
-  #   1. One-time setup (JDK, Python, Copilot CLI, Maven compile)
-  #   2. ENV: containerized (K8s/microk8s) → teardown
-  #   3. ENV: baremetal insecure (dpkg HPCC) → stay installed
-  #   4. ENV: baremetal secure (reconfigure htpasswdsecmgr) → stop
-  #   5. Aggregate cross-env reports (TestGeneratorAgent Step 5)
+  #   1. One-time setup (JDK, Python, Copilot CLI) + generate & compile (steps 0-3)
+  #   2. ENV: containerized (K8s/microk8s) → step 4 → teardown
+  #   3. ENV: baremetal insecure (dpkg HPCC) → step 4 → stay installed
+  #   4. ENV: baremetal secure (reconfigure htpasswdsecmgr) → step 4 → stop
+  #   5. Aggregate cross-env reports (step 5)
   #   6. Commit results to branch
   # ───────────────────────────────────────────────────────────────────────────
   run-tests:
@@ -146,8 +147,42 @@ jobs:
           key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
           restore-keys: ${{ runner.os }}-m2
 
-      - name: Compile project (skip tests)
-        run: mvn -B clean compile test-compile -DskipTests -pl wsclient -Dmaven.gpg.skip=true
+      - name: Checkout HPCC Platform source (for analysis)
+        if: github.event.inputs.hpcc_platform_repo != ''
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.inputs.hpcc_platform_repo }}
+          ref: ${{ github.event.inputs.hpcc_platform_branch }}
+          path: HPCC-Platform
+
+      - name: Generate tests and compile (steps 0-3)
+        id: gen_and_build
+        env:
+          SERVICE_NAME: ${{ github.event.inputs.service_name }}
+          METHOD_NAME: ${{ github.event.inputs.method_name }}
+          OUTPUT_DIR_INPUT: ${{ github.event.inputs.output_dir }}
+          HPCC_PLATFORM_REPO: ${{ github.event.inputs.hpcc_platform_repo }}
+          COPILOT_MODEL: ${{ github.event.inputs.copilot_model }}
+        run: |
+          ARGS="$SERVICE_NAME"
+          if [ -n "$METHOD_NAME" ]; then ARGS="$ARGS $METHOD_NAME"; fi
+
+          # If an existing output dir was supplied, skip analysis/generation and only build
+          if [ -n "$OUTPUT_DIR_INPUT" ]; then
+            ARGS="$ARGS --start-from-step 3"
+          fi
+          ARGS="$ARGS --end-at-step 3"
+          ARGS="$ARGS --scenarios none"
+
+          # Pass HPCC Platform source only if it was checked out
+          if [ -n "$HPCC_PLATFORM_REPO" ]; then
+            ARGS="$ARGS --hpcc-source ./HPCC-Platform"
+          fi
+
+          if [ -n "$COPILOT_MODEL" ]; then ARGS="$ARGS --model $COPILOT_MODEL"; fi
+
+          echo "Running: python3 scripts/wsclient-test-generator/TestGeneratorAgent.py $ARGS"
+          python3 scripts/wsclient-test-generator/TestGeneratorAgent.py $ARGS
 
       # ── ENV 1: CONTAINERIZED (K8s / microk8s) ──────────────────────────────
 
@@ -207,9 +242,8 @@ jobs:
         run: |
           ARGS="$SERVICE_NAME"
           if [ -n "$METHOD_NAME" ]; then ARGS="$ARGS $METHOD_NAME"; fi
-          ARGS="$ARGS --hpcc-source /tmp/hpcc-source-placeholder"
           ARGS="$ARGS --env-config environments.json --env containerized"
-          ARGS="$ARGS --start-from-step 4"
+          ARGS="$ARGS --start-from-step 4 --end-at-step 4"
           ARGS="$ARGS --parallel-threads $PARALLEL_THREADS"
           ARGS="$ARGS --scenarios none"
           if [ -n "$COPILOT_MODEL" ]; then ARGS="$ARGS --model $COPILOT_MODEL"; fi
@@ -321,9 +355,8 @@ jobs:
         run: |
           ARGS="$SERVICE_NAME"
           if [ -n "$METHOD_NAME" ]; then ARGS="$ARGS $METHOD_NAME"; fi
-          ARGS="$ARGS --hpcc-source /tmp/hpcc-source-placeholder"
           ARGS="$ARGS --env-config environments.json --env baremetal"
-          ARGS="$ARGS --start-from-step 4"
+          ARGS="$ARGS --start-from-step 4 --end-at-step 4"
           ARGS="$ARGS --parallel-threads $PARALLEL_THREADS"
           ARGS="$ARGS --scenarios none"
           if [ -n "$COPILOT_MODEL" ]; then ARGS="$ARGS --model $COPILOT_MODEL"; fi
@@ -422,9 +455,8 @@ jobs:
         run: |
           ARGS="$SERVICE_NAME"
           if [ -n "$METHOD_NAME" ]; then ARGS="$ARGS $METHOD_NAME"; fi
-          ARGS="$ARGS --hpcc-source /tmp/hpcc-source-placeholder"
           ARGS="$ARGS --env-config environments.json --env secure"
-          ARGS="$ARGS --start-from-step 4"
+          ARGS="$ARGS --start-from-step 4 --end-at-step 4"
           ARGS="$ARGS --parallel-threads $PARALLEL_THREADS"
           ARGS="$ARGS --scenarios none"
           if [ -n "$COPILOT_MODEL" ]; then ARGS="$ARGS --model $COPILOT_MODEL"; fi
@@ -446,7 +478,6 @@ jobs:
         run: |
           ARGS="$SERVICE_NAME"
           if [ -n "$METHOD_NAME" ]; then ARGS="$ARGS $METHOD_NAME"; fi
-          ARGS="$ARGS --hpcc-source /tmp/hpcc-source-placeholder"
           ARGS="$ARGS --start-from-step 5"
           ARGS="$ARGS --scenarios none"
           if [ -n "$COPILOT_MODEL" ]; then ARGS="$ARGS --model $COPILOT_MODEL"; fi
@@ -473,17 +504,8 @@ jobs:
 
           git checkout -b "$BRANCH"
 
-          # Stage all result artifacts produced during this run
-          git add \
-            "**/*TestResults_Iteration*.json" \
-            "**/*FinalReport_*.md" \
-            "**/*FailureReport_*.md" \
-            "**/*BatchAnalysis_*.md" \
-            "**/*ServerIssue_*.md" \
-            "**/*UnverifiedServerIssuesReport_*.md" \
-            "**/*AggregateReport_*.md" \
-            "test-logs/" \
-            2>/dev/null || true
+          # Stage all new, modified, and deleted files produced during this run
+          git add -A
 
           if git diff --cached --quiet; then
             echo "No result files found — nothing to commit."
