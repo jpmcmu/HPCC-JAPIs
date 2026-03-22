@@ -424,7 +424,7 @@ COPILOT_WHITELIST = [
 def build_copilot_cmd(prompt_text):
     """Return a list suitable for subprocess.run for invoking the copilot CLI
     with the current whitelist.
-    
+
     Tools are passed using the --allow-tool parameter with the correct format:
     - shell(command) for shell commands
     - write for file creation/modification
@@ -444,7 +444,24 @@ def build_copilot_cmd(prompt_text):
 
     # Add directory context for better code awareness
     cmd.extend(["--add-dir", HPCC4J_DIR])
-    cmd.extend(["--add-dir", HPCC_SOURCE_DIR])
+    if HPCC_SOURCE_DIR:  # Skip when empty — --add-dir "" causes Copilot CLI to abort
+        cmd.extend(["--add-dir", HPCC_SOURCE_DIR])
+    cmd.extend(["--add-dir", TMP_DIR])
+    
+    return cmd
+    
+    # Add model selection if specified
+    if COPILOT_MODEL:
+        cmd.extend(["--model", COPILOT_MODEL])
+    
+    # Add each whitelisted tool
+    for tool in COPILOT_WHITELIST:
+        cmd.extend(["--allow-tool", tool])
+
+    # Add directory context for better code awareness
+    cmd.extend(["--add-dir", HPCC4J_DIR])
+    if HPCC_SOURCE_DIR:  # Skip when empty — --add-dir "" causes Copilot CLI to abort
+        cmd.extend(["--add-dir", HPCC_SOURCE_DIR])
     cmd.extend(["--add-dir", TMP_DIR])
     
     return cmd
@@ -612,12 +629,17 @@ def copilot_generate(prompt_file, output_file, variables=None):
     print("Note: This will run Copilot interactively. Please review the analysis and ensure it's saved to the correct file.")
     
     # Use subprocess with proper argument passing (build flags from whitelist)
-    result = subprocess.run(build_copilot_cmd(full_prompt))
+    # stderr is captured so non-zero exits can be diagnosed even if stdout streamed away
+    result = subprocess.run(build_copilot_cmd(full_prompt), stderr=subprocess.PIPE, text=True)
     
     # Check if Copilot command failed
     if result.returncode != 0:
         print(f"\n⚠️  Warning: Copilot command exited with code {result.returncode}")
         print("The analysis generation may not have completed successfully.")
+        if result.stderr:
+            print("\n--- Copilot stderr ---")
+            print(result.stderr[-3000:])
+            print("--- End Copilot stderr ---")
     
     # Check if the output file was created
     if not os.path.exists(output_file):
@@ -656,7 +678,7 @@ def copilot_fix_from_template(prompt_file, context_files, variables=None):
 
 def copilot_run_from_template(prompt_file, variables=None):
     prompt_text = render_prompt_file(prompt_file, variables)
-    return subprocess.run(build_copilot_cmd(prompt_text))
+    return subprocess.run(build_copilot_cmd(prompt_text), stderr=subprocess.PIPE, text=True)
 
 
 def find_unverified_server_issue_tests(test_file_path):
@@ -731,7 +753,13 @@ def copilot_fix(prompt, context_files):
     print(f"\n🤖 Running Copilot to fix issues...")
     
     # Use subprocess with proper argument passing (build flags from whitelist)
-    result = subprocess.run(build_copilot_cmd(full_prompt))
+    result = subprocess.run(build_copilot_cmd(full_prompt), stderr=subprocess.PIPE, text=True)
+    
+    if result.returncode != 0 and result.stderr:
+        print(f"⚠️  Copilot fix exited with code {result.returncode}")
+        print("\n--- Copilot stderr ---")
+        print(result.stderr[-3000:])
+        print("--- End Copilot stderr ---")
     
     print("✅ Copilot fix completed!")
 
