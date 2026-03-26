@@ -21,12 +21,24 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.fail;
 import static org.junit.Assume.assumeTrue;
 
+import java.net.URL;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.axis2.AxisFault;
+import org.hpccsystems.commons.annotations.ConnectivityTests;
+import org.hpccsystems.commons.annotations.CoreFunctionalityTests;
+import org.hpccsystems.commons.annotations.EdgeCaseTests;
+import org.hpccsystems.commons.annotations.ErrorHandlingTests;
+import org.hpccsystems.ws.client.utils.Connection;
 import org.hpccsystems.ws.client.utils.DelimitedDataOptions;
 import org.hpccsystems.ws.client.wrappers.ArrayOfEspExceptionWrapper;
 import org.hpccsystems.ws.client.wrappers.gen.filespray.ProgressResponseWrapper;
@@ -34,7 +46,9 @@ import org.hpccsystems.ws.client.wrappers.wsdfu.DFUInfoWrapper;
 import org.junit.Assert;
 import org.junit.Assume;
 import org.junit.FixMethodOrder;
+import org.junit.Ignore;
 import org.junit.Test;
+import org.junit.experimental.categories.Category;
 import org.junit.runners.MethodSorters;
 
 import io.opentelemetry.instrumentation.annotations.WithSpan;
@@ -237,5 +251,169 @@ public class WSFileIOClientTest extends BaseRemoteTest
     {
         System.out.println("Fetching isTargetHPCCContainerized...");
         assertNotNull(client.isTargetHPCCContainerized());
+    }
+
+    /**
+     * CFT-001-ping — Calls ping() five times in sequence and asserts every call returns true.
+     * Verifies idempotency and the absence of resource leaks across repeated calls.
+     *
+     * <p>Environment requirements: any
+     */
+    @Category(CoreFunctionalityTests.class)
+    @Test
+    public void testPing_repeatedSuccessiveCalls() throws Exception
+    {
+        for (int i = 0; i < 5; i++)
+        {
+            Assert.assertTrue("ping() returned false on call " + (i + 1), client.ping());
+        }
+    }
+
+    /**
+     * CFT-002-ping — Performs a createFile operation and then immediately calls ping().
+     * Verifies that ping remains available and correct after the service has processed real work.
+     *
+     * <p>Environment requirements: any
+     */
+    @Category(CoreFunctionalityTests.class)
+    @Test
+    public void testPing_afterOtherOperations() throws Exception
+    {
+        Assume.assumeNotNull(System.getProperty("lzname"), System.getProperty("lztestfile"));
+
+        String uniqueFileName = "ping_cft002_" + System.currentTimeMillis() + ".dat";
+        try
+        {
+            client.createHPCCFile(uniqueFileName, targetLZ, true, isContainerized ? null : targetLZAddress);
+        }
+        catch (Exception e)
+        {
+            // createFile failure is acceptable; what matters is ping still works afterward
+            System.out.println("testPing_afterOtherOperations: createFile threw (acceptable): " + e.getMessage());
+        }
+
+        Assert.assertTrue("ping() returned false after createFile operation", client.ping());
+    }
+
+    /**
+     * ECT-001-ping — Submits 10 concurrent ping() calls using an ExecutorService and asserts
+     * all return true. Verifies thread-safety and correct concurrent handling by the Axis2 stub.
+     *
+     * <p>Environment requirements: any
+     */
+    @Category(EdgeCaseTests.class)
+    @Test
+    public void testPing_concurrentCalls() throws Exception
+    {
+        final int threadCount = 10;
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+        List<Callable<Boolean>> tasks = new ArrayList<>();
+        for (int i = 0; i < threadCount; i++)
+        {
+            tasks.add(new Callable<Boolean>() {
+                @Override
+                public Boolean call() throws Exception
+                {
+                    return client.ping();
+                }
+            });
+        }
+
+        List<Future<Boolean>> futures = executor.invokeAll(tasks, 30, TimeUnit.SECONDS);
+        executor.shutdown();
+
+        for (int i = 0; i < futures.size(); i++)
+        {
+            Assert.assertTrue("ping() returned false on concurrent call " + i, futures.get(i).get());
+        }
+    }
+
+    /**
+     * EHT-001-ping — Creates an HPCCWsFileIOClient pointing at a non-existent host
+     * (RFC 5737 TEST-NET 192.0.2.1) and calls ping(). Verifies the method swallows the
+     * ConnectException and returns false rather than propagating an exception.
+     *
+     * <p>Environment requirements: any
+     */
+    @Category(ErrorHandlingTests.class)
+    @Test
+    public void testPing_unreachableHost() throws Exception
+    {
+        HPCCWsFileIOClient unreachableClient = HPCCWsFileIOClient.get("http", "192.0.2.1", "8010", "anyuser", "anypass", 2000);
+        Assert.assertFalse("ping() should return false for unreachable host", unreachableClient.ping());
+    }
+
+    /**
+     * EHT-002-ping — Creates an HPCCWsFileIOClient pointing at the correct HPCC host but
+     * with an incorrect port (9999). Verifies ping() returns false rather than throwing.
+     *
+     * <p>Environment requirements: any
+     */
+    @Category(ErrorHandlingTests.class)
+    @Test
+    public void testPing_wrongPort() throws Exception
+    {
+        URL url = new URL(connString);
+        String protocol = url.getProtocol();
+        String host = url.getHost();
+        HPCCWsFileIOClient wrongPortClient = HPCCWsFileIOClient.get(protocol, host, "9999", hpccUser, hpccPass, 2000);
+        Assert.assertFalse("ping() should return false for wrong port", wrongPortClient.ping());
+    }
+
+    /**
+     * EHT-003-ping — Attempts to invoke ping() on an uninitialised HPCCWsFileIOClient to verify
+     * that verifyStub() throws an Exception before a network call is made.
+     *
+     * <p>Environment requirements: any
+     */
+    @Category(ErrorHandlingTests.class)
+    @Ignore("HPCCWsFileIOClient construction with a null Connection throws NullPointerException "
+            + "before ping() is reached; the stub-null guard in verifyStub() cannot be exercised "
+            + "via the public API because there is no no-arg constructor or deferred-init factory.")
+    @Test
+    public void testPing_uninitializedClient() throws Exception
+    {
+        // Not reachable — kept as documentation of the design constraint.
+        Assert.fail("This test should have been skipped by @Ignore");
+    }
+
+    /**
+     * CNT-001-ping — Creates an HPCCWsFileIOClient with the correct endpoint but deliberately
+     * wrong credentials and asserts ping() returns false. Verifies auth failure is handled
+     * gracefully on a secured cluster.
+     *
+     * <p>Environment requirements: secure
+     */
+    @Category(ConnectivityTests.class)
+    @Test
+    public void testPing_invalidCredentials() throws Exception
+    {
+        Assume.assumeTrue("Skipping CNT-001: target HPCC cluster does not enforce authentication",
+                client.doesTargetHPCCAuthenticate());
+
+        Connection badConn = new Connection(connString);
+        badConn.setCredentials("invalid_user", "wrong_password");
+        HPCCWsFileIOClient badCredsClientFinal = HPCCWsFileIOClient.get(badConn);
+        Assert.assertFalse("ping() should return false for invalid credentials", badCredsClientFinal.ping());
+    }
+
+    /**
+     * CNT-002-ping — Creates an HPCCWsFileIOClient with empty username and password against a
+     * secured HPCC cluster and asserts ping() returns false. Validates that absent credentials
+     * are treated as an authentication failure.
+     *
+     * <p>Environment requirements: secure
+     */
+    @Category(ConnectivityTests.class)
+    @Test
+    public void testPing_emptyCredentials() throws Exception
+    {
+        Assume.assumeTrue("Skipping CNT-002: target HPCC cluster does not enforce authentication",
+                client.doesTargetHPCCAuthenticate());
+
+        Connection emptyCredsConn = new Connection(connString);
+        emptyCredsConn.setCredentials("", "");
+        HPCCWsFileIOClient emptyCredsClient = HPCCWsFileIOClient.get(emptyCredsConn);
+        Assert.assertFalse("ping() should return false for empty credentials", emptyCredsClient.ping());
     }
 }

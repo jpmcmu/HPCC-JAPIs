@@ -1,0 +1,103 @@
+{
+  "service": "WsFileIO",
+  "method": "ping",
+  "testClass": "WsFileIOClientTest",
+  "tests": [
+    {
+      "testName": "testPing_repeatedSuccessiveCalls",
+      "label": "CFT-001-ping",
+      "method": "ping",
+      "description": "Calls ping() five times in sequence and asserts every call returns true. Verifies idempotency and the absence of resource leaks across repeated calls.",
+      "category": "CFT",
+      "environmentRequirements": ["any"],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Execute calls in a simple for-loop. Lightweight smoke-test for connection-pool or socket reuse issues."
+    },
+    {
+      "testName": "testPing_afterOtherOperations",
+      "label": "CFT-002-ping",
+      "method": "ping",
+      "description": "Performs a createFile operation then immediately calls ping(). Verifies that ping remains available and correct after the service has processed real work.",
+      "category": "CFT",
+      "environmentRequirements": ["any"],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Skipped via Assume.assumeNotNull if -Dlzname and -Dlztestfile system properties are not provided. createFile failure is acceptable; only ping result is asserted."
+    },
+    {
+      "testName": "testPing_concurrentCalls",
+      "label": "ECT-001-ping",
+      "method": "ping",
+      "description": "Submits 10 concurrent ping() calls using an ExecutorService and asserts all return true. Verifies thread-safety and correct concurrent handling by the Axis2 stub.",
+      "category": "ECT",
+      "environmentRequirements": ["any"],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Uses Executors.newFixedThreadPool(10) and invokeAll with a 30-second timeout. Fails if any thread receives false or throws."
+    },
+    {
+      "testName": "testPing_unreachableHost",
+      "label": "EHT-001-ping",
+      "method": "ping",
+      "description": "Creates an HPCCWsFileIOClient pointing at RFC 5737 TEST-NET host 192.0.2.1:8010 and asserts ping() returns false. Verifies ConnectException is swallowed and not propagated.",
+      "category": "EHT",
+      "environmentRequirements": ["any"],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Uses a 2-second connection timeout to avoid long TCP timeout waits. 192.0.2.1 is RFC 5737 TEST-NET guaranteed unreachable."
+    },
+    {
+      "testName": "testPing_wrongPort",
+      "label": "EHT-002-ping",
+      "method": "ping",
+      "description": "Creates an HPCCWsFileIOClient pointing at the correct HPCC host but port 9999 and asserts ping() returns false. Verifies connection-refused error is handled gracefully.",
+      "category": "EHT",
+      "environmentRequirements": ["any"],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Extracts host from hpccconn system property and substitutes port 9999. Uses 2-second connect timeout."
+    },
+    {
+      "testName": "testPing_uninitializedClient",
+      "label": "EHT-003-ping",
+      "method": "ping",
+      "description": "Documents the design constraint that HPCCWsFileIOClient cannot be constructed without a valid Connection; verifyStub() guard is unreachable via the public API.",
+      "category": "EHT",
+      "environmentRequirements": ["any"],
+      "expectedOutcome": "SKIP",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Annotated @Ignore. HPCCWsFileIOClient has no no-arg constructor; passing null Connection throws NullPointerException at construction time before ping() is called."
+    },
+    {
+      "testName": "testPing_invalidCredentials",
+      "label": "CNT-001-ping",
+      "method": "ping",
+      "description": "Creates an HPCCWsFileIOClient with correct endpoint but wrong credentials and asserts ping() returns false. Verifies auth failure is handled gracefully on a secured cluster.",
+      "category": "CNT",
+      "environmentRequirements": ["secure"],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Skipped on unsecured clusters via Assume.assumeTrue(client.doesTargetHPCCAuthenticate()). Uses username 'invalid_user' and password 'wrong_password'."
+    },
+    {
+      "testName": "testPing_emptyCredentials",
+      "label": "CNT-002-ping",
+      "method": "ping",
+      "description": "Creates an HPCCWsFileIOClient with empty username and password against a secured cluster and asserts ping() returns false. Validates absent credentials are treated as auth failure.",
+      "category": "CNT",
+      "environmentRequirements": ["secure"],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Skipped on unsecured clusters via Assume.assumeTrue(client.doesTargetHPCCAuthenticate()). Complements CNT-001 by covering the empty-credential edge case."
+    }
+  ]
+}
