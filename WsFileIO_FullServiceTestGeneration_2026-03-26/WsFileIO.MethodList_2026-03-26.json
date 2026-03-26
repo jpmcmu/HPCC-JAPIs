@@ -1,0 +1,38 @@
+{
+  "service": "WsFileIO",
+  "clientClass": "HPCCWsFileIOClient",
+  "methods": [
+    {
+      "name": "ping",
+      "signature": "public boolean ping() throws Exception",
+      "group": "Health/Connectivity",
+      "callsOtherMethods": [],
+      "serverStateEffect": "None",
+      "analysisOrder": 1
+    },
+    {
+      "name": "createHPCCFile",
+      "signature": "public boolean createHPCCFile(String fileName, String targetLandingZone, boolean overwritefile, String lzAddress) throws Exception, ArrayOfEspExceptionWrapper",
+      "group": "File Creation",
+      "callsOtherMethods": [],
+      "serverStateEffect": "Create",
+      "analysisOrder": 2
+    },
+    {
+      "name": "writeHPCCFileData",
+      "signature": "public boolean writeHPCCFileData(byte[] data, String dataTypeDescriptor, String fileName, String targetLandingZone, boolean append, long offset, int uploadchunksize, String lzAddress) throws Exception, ArrayOfEspExceptionWrapper",
+      "group": "File Write",
+      "callsOtherMethods": [],
+      "serverStateEffect": "Create/Update",
+      "analysisOrder": 3
+    },
+    {
+      "name": "readFileData",
+      "signature": "public String readFileData(String dropzone, String fileName, long datasize, long offset, String dropzoneAddress) throws Exception, ArrayOfEspExceptionWrapper",
+      "group": "File Read",
+      "callsOtherMethods": [],
+      "serverStateEffect": "Read",
+      "analysisOrder": 4
+    }
+  ]
+}

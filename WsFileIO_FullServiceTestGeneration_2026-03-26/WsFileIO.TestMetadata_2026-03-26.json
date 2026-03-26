@@ -1,0 +1,1147 @@
+{
+  "service": "WsFileIO",
+  "mode": "full-service",
+  "testClass": "WsFileIOClientTest",
+  "methods": [
+    "ping",
+    "createHPCCFile",
+    "writeHPCCFileData",
+    "readFileData"
+  ],
+  "tests": [
+    {
+      "testName": "testPing_repeatedSuccessiveCalls",
+      "label": "CFT-001-ping",
+      "method": "ping",
+      "description": "Calls ping() five times in sequence and asserts every call returns true. Verifies idempotency and the absence of resource leaks across repeated calls.",
+      "category": "CFT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Execute calls in a simple for-loop. Lightweight smoke-test for connection-pool or socket reuse issues."
+    },
+    {
+      "testName": "testPing_afterOtherOperations",
+      "label": "CFT-002-ping",
+      "method": "ping",
+      "description": "Performs a createFile operation then immediately calls ping(). Verifies that ping remains available and correct after the service has processed real work.",
+      "category": "CFT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Skipped via Assume.assumeNotNull if -Dlzname and -Dlztestfile system properties are not provided. createFile failure is acceptable; only ping result is asserted."
+    },
+    {
+      "testName": "testPing_concurrentCalls",
+      "label": "ECT-001-ping",
+      "method": "ping",
+      "description": "Submits 10 concurrent ping() calls using an ExecutorService and asserts all return true. Verifies thread-safety and correct concurrent handling by the Axis2 stub.",
+      "category": "ECT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Uses Executors.newFixedThreadPool(10) and invokeAll with a 30-second timeout. Fails if any thread receives false or throws."
+    },
+    {
+      "testName": "testPing_unreachableHost",
+      "label": "EHT-001-ping",
+      "method": "ping",
+      "description": "Creates an HPCCWsFileIOClient pointing at RFC 5737 TEST-NET host 192.0.2.1:8010 and asserts ping() returns false. Verifies ConnectException is swallowed and not propagated.",
+      "category": "EHT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Uses a 2-second connection timeout to avoid long TCP timeout waits. 192.0.2.1 is RFC 5737 TEST-NET guaranteed unreachable."
+    },
+    {
+      "testName": "testPing_wrongPort",
+      "label": "EHT-002-ping",
+      "method": "ping",
+      "description": "Creates an HPCCWsFileIOClient pointing at the correct HPCC host but port 9999 and asserts ping() returns false. Verifies connection-refused error is handled gracefully.",
+      "category": "EHT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Extracts host from hpccconn system property and substitutes port 9999. Uses 2-second connect timeout."
+    },
+    {
+      "testName": "testPing_uninitializedClient",
+      "label": "EHT-003-ping",
+      "method": "ping",
+      "description": "Documents the design constraint that HPCCWsFileIOClient cannot be constructed without a valid Connection; verifyStub() guard is unreachable via the public API.",
+      "category": "EHT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "SKIP",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Annotated @Ignore. HPCCWsFileIOClient has no no-arg constructor; passing null Connection throws NullPointerException at construction time before ping() is called."
+    },
+    {
+      "testName": "testPing_invalidCredentials",
+      "label": "CNT-001-ping",
+      "method": "ping",
+      "description": "Creates an HPCCWsFileIOClient with correct endpoint but wrong credentials and asserts ping() returns false. Verifies auth failure is handled gracefully on a secured cluster.",
+      "category": "CNT",
+      "environmentRequirements": [
+        "secure"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Skipped on unsecured clusters via Assume.assumeTrue(client.doesTargetHPCCAuthenticate()). Uses username 'invalid_user' and password 'wrong_password'."
+    },
+    {
+      "testName": "testPing_emptyCredentials",
+      "label": "CNT-002-ping",
+      "method": "ping",
+      "description": "Creates an HPCCWsFileIOClient with empty username and password against a secured cluster and asserts ping() returns false. Validates absent credentials are treated as auth failure.",
+      "category": "CNT",
+      "environmentRequirements": [
+        "secure"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Skipped on unsecured clusters via Assume.assumeTrue(client.doesTargetHPCCAuthenticate()). Complements CNT-001 by covering the empty-credential edge case."
+    },
+    {
+      "testName": "testCreateHPCCFile_overwriteFalseNewFile",
+      "label": "CFT-001-createHPCCFile",
+      "method": "createHPCCFile",
+      "description": "Creates a new file with overwrite=false when the file does not pre-exist. Verifies the operation succeeds and returns true.",
+      "category": "CFT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Unique timestamped file name guarantees the file does not pre-exist. Uses overwrite=false on a new file which should succeed."
+    },
+    {
+      "testName": "testCreateHPCCFile_overwriteTrueFileExists",
+      "label": "CFT-002-createHPCCFile",
+      "method": "createHPCCFile",
+      "description": "Creates a file and then creates it again with overwrite=true. Verifies both calls succeed and no exception is thrown.",
+      "category": "CFT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Both calls should return true. The second call silently overwrites the file."
+    },
+    {
+      "testName": "testCreateHPCCFile_deprecatedThreeParamOverload",
+      "label": "CFT-003-createHPCCFile",
+      "method": "createHPCCFile",
+      "description": "Invokes the deprecated 3-parameter createHPCCFile overload (no lzAddress). Verifies it delegates to the 4-parameter version with lzAddress=null and returns true in a containerized environment.",
+      "category": "CFT",
+      "environmentRequirements": [
+        "containerized"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Skipped on non-containerized clusters. Validates backward compatibility of the deprecated API."
+    },
+    {
+      "testName": "testCreateHPCCFile_lzAddressNullContainerized",
+      "label": "CFT-004-createHPCCFile",
+      "method": "createHPCCFile",
+      "description": "Passes lzAddress=null explicitly with the 4-parameter signature in a containerized environment. Verifies DestNetAddress is omitted from the request and the server accepts the call.",
+      "category": "CFT",
+      "environmentRequirements": [
+        "containerized"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Skipped on non-containerized clusters. Distinct from AcreateHPCCFile because it is an explicit null-address test without environment branching."
+    },
+    {
+      "testName": "testCreateHPCCFile_fileNameWithSubdirectory",
+      "label": "ECT-001-createHPCCFile",
+      "method": "createHPCCFile",
+      "description": "Uses a fileName containing a subdirectory path component. Verifies the method handles path separators without throwing an unexpected exception.",
+      "category": "ECT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Outcome (true/false/exception) depends on whether the subdirectory pre-exists on the LZ. Test passes as long as no unchecked exception escapes."
+    },
+    {
+      "testName": "testCreateHPCCFile_fileNameNoExtension",
+      "label": "ECT-002-createHPCCFile",
+      "method": "createHPCCFile",
+      "description": "Uses a fileName with no file extension. Verifies the server does not enforce an extension requirement and the file is created successfully.",
+      "category": "ECT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Tests that the server accepts plain file names without an extension."
+    },
+    {
+      "testName": "testCreateHPCCFile_fileNameWithSpecialChars",
+      "label": "ECT-003-createHPCCFile",
+      "method": "createHPCCFile",
+      "description": "Uses a fileName containing hyphens and underscores. Verifies common separator characters are accepted by the server.",
+      "category": "ECT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Hyphens and underscores are valid POSIX filename characters and should be accepted."
+    },
+    {
+      "testName": "testCreateHPCCFile_lzAddressEmptyString",
+      "label": "ECT-004-createHPCCFile",
+      "method": "createHPCCFile",
+      "description": "Passes an empty string as lzAddress. Verifies the client treats it identically to null and does not include DestNetAddress in the request.",
+      "category": "ECT",
+      "environmentRequirements": [
+        "containerized"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Client code: if (lzAddress != null && !lzAddress.isEmpty()). Empty string is explicitly excluded, same as null. Only valid on containerized."
+    },
+    {
+      "testName": "testCreateHPCCFile_veryLongFileName",
+      "label": "ECT-005-createHPCCFile",
+      "method": "createHPCCFile",
+      "description": "Uses a fileName of 255 characters to test the upper boundary of file system and server name length limits. Verifies no unchecked exception escapes.",
+      "category": "ECT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Both true/false and expected exception types are acceptable outcomes. Test passes if no unchecked exception escapes."
+    },
+    {
+      "testName": "testCreateHPCCFile_singleCharFileName",
+      "label": "ECT-006-createHPCCFile",
+      "method": "createHPCCFile",
+      "description": "Uses a single-character fileName (\"x\") to test the minimal lower boundary of the DestRelativePath field. Verifies the server accepts it.",
+      "category": "ECT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "A single ASCII character is a valid filename on all supported platforms."
+    },
+    {
+      "testName": "testCreateHPCCFile_nullFileName",
+      "label": "EHT-001-createHPCCFile",
+      "method": "createHPCCFile",
+      "description": "Passes null as fileName. Verifies the client throws an Exception with a message containing 'fileName required' before making any network call.",
+      "category": "EHT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Client-side validation fires before any network call. No server contact should occur."
+    },
+    {
+      "testName": "testCreateHPCCFile_emptyFileName",
+      "label": "EHT-002-createHPCCFile",
+      "method": "createHPCCFile",
+      "description": "Passes empty string as fileName. Verifies the client throws an Exception with a message containing 'fileName required' before any network call.",
+      "category": "EHT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Empty string triggers the same client-side guard as null."
+    },
+    {
+      "testName": "testCreateHPCCFile_nullTargetLandingZone",
+      "label": "EHT-003-createHPCCFile",
+      "method": "createHPCCFile",
+      "description": "Passes null as targetLandingZone. Verifies the client throws an Exception with a message containing 'targetLandingZone required' before any network call.",
+      "category": "EHT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "targetLandingZone is validated before fileName in the current implementation."
+    },
+    {
+      "testName": "testCreateHPCCFile_emptyTargetLandingZone",
+      "label": "EHT-004-createHPCCFile",
+      "method": "createHPCCFile",
+      "description": "Passes empty string as targetLandingZone. Verifies the client throws an Exception with a message containing 'targetLandingZone required'.",
+      "category": "EHT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Empty string triggers the same client-side guard as null for targetLandingZone."
+    },
+    {
+      "testName": "testCreateHPCCFile_overwriteFalseFileExists",
+      "label": "EHT-005-createHPCCFile",
+      "method": "createHPCCFile",
+      "description": "Creates a file then attempts to create the same file again with overwrite=false. Verifies the second call returns false, reflecting the server response 'Failure: <path> exists.'",
+      "category": "EHT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "First call uses overwrite=true to ensure the file exists. Represents the most common user error. Pre-condition failure skips via Assume."
+    },
+    {
+      "testName": "testCreateHPCCFile_fileNameIsDirectory",
+      "label": "EHT-006-createHPCCFile",
+      "method": "createHPCCFile",
+      "description": "Passes a fileName of '.' which resolves to the landing zone base directory. Verifies the server returns a failure result and the method returns false or throws an ESP exception.",
+      "category": "EHT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Behaviour depends on how the HPCC server resolves '.' relative to the drop zone base path. Both false return and ESP exception are valid outcomes."
+    },
+    {
+      "testName": "testCreateHPCCFile_invalidDropZoneName",
+      "label": "EHT-007-createHPCCFile",
+      "method": "createHPCCFile",
+      "description": "Passes a targetLandingZone that does not correspond to any configured drop zone. Verifies either an ArrayOfEspExceptionWrapper is thrown or the method returns false.",
+      "category": "EHT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "No silent success allowed. Documents whether the server returns a 'Fail...' result string or raises an ESP exception via validateDropZoneAccess."
+    },
+    {
+      "testName": "testCreateHPCCFile_unreachableLzAddress",
+      "label": "EHT-008-createHPCCFile",
+      "method": "createHPCCFile",
+      "description": "Passes an unreachable lzAddress (RFC 5737 TEST-NET 192.0.2.1). Verifies the server surfaces an error with no silent success. Only meaningful for bare-metal deployments.",
+      "category": "EHT",
+      "environmentRequirements": [
+        "baremetal"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Skipped on containerized clusters. DestNetAddress is only used in baremetal mode for routing to the drop zone node."
+    },
+    {
+      "testName": "testCreateHPCCFile_connectivity",
+      "label": "CNT-001-createHPCCFile",
+      "method": "createHPCCFile",
+      "description": "Confirms the createHPCCFile endpoint is reachable and the method returns true for a minimal valid request against a live cluster.",
+      "category": "CNT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Complements the generic ping() connectivity test with a method-specific connectivity check."
+    },
+    {
+      "testName": "testCreateHPCCFile_invalidCredentials",
+      "label": "CNT-002-createHPCCFile",
+      "method": "createHPCCFile",
+      "description": "Calls createHPCCFile using a client configured with invalid credentials. Verifies an authentication-related exception is thrown or the method does not return true.",
+      "category": "CNT",
+      "environmentRequirements": [
+        "secure"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Skipped when doesTargetHPCCAuthenticate() returns false. Test passes if exception is thrown OR method returns false \u2014 must not return true."
+    },
+    {
+      "testName": "testCreateHPCCFile_validCredentialsSecured",
+      "label": "CNT-003-createHPCCFile",
+      "method": "createHPCCFile",
+      "description": "Calls createHPCCFile on a secured HPCC cluster using valid credentials. Verifies the permission check passes and the method returns true.",
+      "category": "CNT",
+      "environmentRequirements": [
+        "secure"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Skipped when doesTargetHPCCAuthenticate() returns false. Validates the HPCC permission grant path for FILE_IO_URL."
+    },
+    {
+      "testName": "testWriteHPCCFileData_explicitTextMimeType",
+      "label": "CFT-001-writeHPCCFileData",
+      "method": "writeHPCCFileData",
+      "description": "Write a small ASCII text payload using the primary non-deprecated overload with an explicit dataTypeDescriptor of 'text/plain; charset=UTF-8'. Verifies the method returns true and the data can be read back.",
+      "category": "CFT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Exercises the primary non-deprecated overload; verifies MIME type is accepted and round-trip read-back matches."
+    },
+    {
+      "testName": "testWriteHPCCFileData_nullMimeTypeDefaultsToOctetStream",
+      "label": "CFT-002-writeHPCCFileData",
+      "method": "writeHPCCFileData",
+      "description": "Call the primary overload with dataTypeDescriptor=null. Verifies that the client defaults to 'application/octet-stream' internally and the write succeeds without a NullPointerException.",
+      "category": "CFT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Validates the null-guard on dataTypeDescriptor in HPCCWsFileIOClient."
+    },
+    {
+      "testName": "testWriteHPCCFileData_emptyMimeTypeDefaultsToOctetStream",
+      "label": "CFT-003-writeHPCCFileData",
+      "method": "writeHPCCFileData",
+      "description": "Call the primary overload with dataTypeDescriptor='' (empty string). Verifies the internal isEmpty() guard defaults to 'application/octet-stream' and the write succeeds.",
+      "category": "CFT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Exercises the isEmpty() branch of the MIME type null-guard."
+    },
+    {
+      "testName": "testWriteHPCCFileData_binaryData",
+      "label": "CFT-004-writeHPCCFileData",
+      "method": "writeHPCCFileData",
+      "description": "Write a byte array containing non-printable binary bytes (simulated PNG header) and verify round-trip correctness via readFileData. Validates MTOM/MIME encoding preserves binary content.",
+      "category": "CFT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Uses ISO-8859-1 for byte comparison since readFileData returns a Java String."
+    },
+    {
+      "testName": "testWriteHPCCFileData_jsonMimeType",
+      "label": "CFT-005-writeHPCCFileData",
+      "method": "writeHPCCFileData",
+      "description": "Write a JSON string with dataTypeDescriptor='application/json' and verify the server accepts it. Tests client-side DataSource construction with a non-standard MIME type.",
+      "category": "CFT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Server-side storage is MIME-agnostic; primarily tests client DataSource construction."
+    },
+    {
+      "testName": "testWriteHPCCFileData_multiChunkWrite",
+      "label": "CFT-006-writeHPCCFileData",
+      "method": "writeHPCCFileData",
+      "description": "Write a 100-byte payload with uploadchunksize=20, forcing 5 loop iterations. Verifies the full data is written correctly via readFileData length check.",
+      "category": "CFT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Directly exercises the while(bytesleft > 0) loop for multiple iterations."
+    },
+    {
+      "testName": "testWriteHPCCFileData_defaultChunkSizeWhenZeroOrNegative",
+      "label": "CFT-007-writeHPCCFileData",
+      "method": "writeHPCCFileData",
+      "description": "Pass uploadchunksize=0 and uploadchunksize=-1 to verify the client substitutes defaultUploadChunkSize (5,000,000) and writes succeed without arithmetic errors.",
+      "category": "CFT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Two writes in one test method (cft007a and cft007b); both must return true."
+    },
+    {
+      "testName": "testWriteHPCCFileData_roundTripVerification",
+      "label": "CFT-008-writeHPCCFileData",
+      "method": "writeHPCCFileData",
+      "description": "Create a file, write known content with chunksize=5 (multiple chunks), read it back, and assert byte-level equality. Definitive correctness end-to-end test.",
+      "category": "CFT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Small chunksize=5 exercises multi-chunk correctness and data ordering simultaneously."
+    },
+    {
+      "testName": "testWriteHPCCFileData_chunkSizeEqualsDataLength",
+      "label": "ECT-001-writeHPCCFileData",
+      "method": "writeHPCCFileData",
+      "description": "Set uploadchunksize exactly equal to data.length so the loop executes exactly once. Verifies correct single-chunk boundary behaviour.",
+      "category": "ECT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Boundary condition: chunksize == data.length == 10 bytes."
+    },
+    {
+      "testName": "testWriteHPCCFileData_chunkSizeLargerThanData",
+      "label": "ECT-002-writeHPCCFileData",
+      "method": "writeHPCCFileData",
+      "description": "Set uploadchunksize larger than data.length (chunk exceeds payload). Loop runs exactly once; verifies no ArrayIndexOutOfBoundsException.",
+      "category": "ECT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "9-byte data with chunksize=100."
+    },
+    {
+      "testName": "testWriteHPCCFileData_singleByte",
+      "label": "ECT-003-writeHPCCFileData",
+      "method": "writeHPCCFileData",
+      "description": "Write a single-byte payload (0x42). Verifies the minimum valid non-empty write is handled correctly.",
+      "category": "ECT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Minimum boundary for non-empty data; uploadchunksize=1."
+    },
+    {
+      "testName": "testWriteHPCCFileData_explicitLzAddressBaremetal",
+      "label": "ECT-004-writeHPCCFileData",
+      "method": "writeHPCCFileData",
+      "description": "In a bare-metal environment, provide an explicit lzAddress from system property. Verify the client sets DestNetAddress in the request and the write succeeds.",
+      "category": "ECT",
+      "environmentRequirements": [
+        "baremetal"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Skipped in containerized environments via assumeFalse(isContainerized)."
+    },
+    {
+      "testName": "testWriteHPCCFileData_largeDataMultipleChunks",
+      "label": "ECT-005-writeHPCCFileData",
+      "method": "writeHPCCFileData",
+      "description": "Write approximately 1 MB of data with a 100 KB chunk size (~10 iterations). Verify all bytes are written without timeout or exception.",
+      "category": "ECT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Tests chunked loop performance. Optional readFileData confirmation omitted due to ESP response size limits."
+    },
+    {
+      "testName": "testWriteHPCCFileData_appendFalseOverriddenByClientBug",
+      "label": "ECT-006-writeHPCCFileData",
+      "method": "writeHPCCFileData",
+      "description": "Pass append=false and document that the client overrides this to append=true in the loop (Note A bug). Both writes produce concatenated content 'FIRSTSECOND' (11 bytes).",
+      "category": "ECT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Intentional bug documentation test. When bug is fixed, expected read-back should be 'SECOND' (6 bytes) and test will need updating."
+    },
+    {
+      "testName": "testWriteHPCCFileData_userOffsetOverriddenByClientBug",
+      "label": "ECT-007-writeHPCCFileData",
+      "method": "writeHPCCFileData",
+      "description": "Pass offset=5 and document that the client loop overrides it to data.length (Note A bug). Write still succeeds since append=true causes the server to ignore Offset.",
+      "category": "ECT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Intentional bug documentation test; exists as a regression marker for Note A offset override."
+    },
+    {
+      "testName": "testWriteHPCCFileData_nullDataThrowsNullPointerException",
+      "label": "EHT-001-writeHPCCFileData",
+      "method": "writeHPCCFileData",
+      "description": "Pass data=null. Expect NullPointerException at data.length before any server call is made.",
+      "category": "EHT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Client-side exception; no network call made."
+    },
+    {
+      "testName": "testWriteHPCCFileData_emptyDataReturnsTrueWithoutWrite",
+      "label": "EHT-002-writeHPCCFileData",
+      "method": "writeHPCCFileData",
+      "description": "Pass data=new byte[0]. bytesleft=0 so the loop never runs; method returns true without any server communication. Documents silent success edge case.",
+      "category": "EHT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Loop body never entered when data is empty; no server call made."
+    },
+    {
+      "testName": "testWriteHPCCFileData_nullFileNameReturnsTrueDueToClientBug",
+      "label": "EHT-003-writeHPCCFileData",
+      "method": "writeHPCCFileData",
+      "description": "Pass fileName=null. Server returns 'Destination path not specified'; client does not detect this as an error and returns true. Documents client-side bug.",
+      "category": "EHT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Intentional client bug documentation. If bug is fixed, expect false instead of true."
+    },
+    {
+      "testName": "testWriteHPCCFileData_emptyFileNameReturnsTrueDueToClientBug",
+      "label": "EHT-004-writeHPCCFileData",
+      "method": "writeHPCCFileData",
+      "description": "Pass fileName='' (empty string). Same server-side validation failure as EHT-003; client returns true due to same bug.",
+      "category": "EHT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Parallel to EHT-003; exercises empty-string path."
+    },
+    {
+      "testName": "testWriteHPCCFileData_nullTargetLandingZoneReturnsTrueDueToClientBug",
+      "label": "EHT-005-writeHPCCFileData",
+      "method": "writeHPCCFileData",
+      "description": "Pass targetLandingZone=null. Server returns 'Destination not specified'; client returns true (bug).",
+      "category": "EHT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Documents server-side error not surfaced as client-side failure."
+    },
+    {
+      "testName": "testWriteHPCCFileData_emptyTargetLandingZoneReturnsTrueDueToClientBug",
+      "label": "EHT-006-writeHPCCFileData",
+      "method": "writeHPCCFileData",
+      "description": "Pass targetLandingZone='' (empty string). Server returns 'Destination not specified'; client returns true (bug).",
+      "category": "EHT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Parallel to EHT-005."
+    },
+    {
+      "testName": "testWriteHPCCFileData_nonExistentFileReturnsTrueDueToClientBug",
+      "label": "EHT-007-writeHPCCFileData",
+      "method": "writeHPCCFileData",
+      "description": "Call writeHPCCFileData without first calling createHPCCFile. Server returns '<path> does not exist.'; client returns true (bug).",
+      "category": "EHT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Documents that the client silently ignores 'file not found'. If bug is fixed, expect false."
+    },
+    {
+      "testName": "testWriteHPCCFileData_invalidLzAddressBaremetal",
+      "label": "EHT-008-writeHPCCFileData",
+      "method": "writeHPCCFileData",
+      "description": "Provide invalid lzAddress '999.999.999.999' in a bare-metal environment. Server's validateDropZoneAccess should reject the request.",
+      "category": "EHT",
+      "environmentRequirements": [
+        "baremetal"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Skipped in containerized environments via assumeFalse(isContainerized)."
+    },
+    {
+      "testName": "testWriteHPCCFileData_invalidConnectionThrowsException",
+      "label": "EHT-009-writeHPCCFileData",
+      "method": "writeHPCCFileData",
+      "description": "Construct an HPCCWsFileIOClient with an invalid host/port and call writeHPCCFileData. Expect an Exception from verifyStub() or the network layer.",
+      "category": "EHT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Uses HPCCWsFileIOClient.get() factory with 'invalid.host.invalid:9999'."
+    },
+    {
+      "testName": "testWriteHPCCFileData_unauthorizedWriteRejected",
+      "label": "EHT-010-writeHPCCFileData",
+      "method": "writeHPCCFileData",
+      "description": "Attempt to write using a client with deliberately wrong credentials on a security-enabled cluster. Server should reject with an authorization error.",
+      "category": "EHT",
+      "environmentRequirements": [
+        "secure"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Skipped via assumeTrue(client.doesTargetHPCCAuthenticate()) on unsecured clusters."
+    },
+    {
+      "testName": "testWriteHPCCFileData_connectivity",
+      "label": "CNT-001-writeHPCCFileData",
+      "method": "writeHPCCFileData",
+      "description": "Confirm the WsFileIO service is reachable by executing a valid minimal writeHPCCFileData call. No AxisFault, ConnectException, or UnknownHostException should be thrown.",
+      "category": "CNT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Distinct from existing ping test \u2014 exercises the full WriteFileData SOAP operation path."
+    },
+    {
+      "testName": "testWriteHPCCFileData_validCredentialsSucceed",
+      "label": "CNT-002-writeHPCCFileData",
+      "method": "writeHPCCFileData",
+      "description": "Confirm that a write request using the configured valid credentials succeeds on a security-enabled cluster.",
+      "category": "CNT",
+      "environmentRequirements": [
+        "secure"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Skipped via assumeTrue(client.doesTargetHPCCAuthenticate()) on unsecured clusters."
+    },
+    {
+      "testName": "testWriteHPCCFileData_invalidCredentialsRejected",
+      "label": "CNT-003-writeHPCCFileData",
+      "method": "writeHPCCFileData",
+      "description": "Confirm that a write request with bad credentials is rejected at the authentication layer on a security-enabled cluster.",
+      "category": "CNT",
+      "environmentRequirements": [
+        "secure"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Equivalent to EHT-010 from auth perspective; included for connectivity matrix completeness."
+    },
+    {
+      "testName": "testReadFileData_partialReadNonZeroOffset",
+      "label": "CFT-001-readFileData",
+      "method": "readFileData",
+      "description": "Reads 10 bytes starting at offset 5 from a known test file. Verifies partial reads with a non-zero offset return the correct byte range.",
+      "category": "CFT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": true,
+      "requiredDataset": "N/A",
+      "notes": "Uses landing zone file created in-test via createHPCCFile + writeHPCCFileData with READ_FILE_DATA_TEST_CONTENT. Expected response: bytes 5-14 of test string."
+    },
+    {
+      "testName": "testReadFileData_dataSizeLargerThanRemainingBytes",
+      "label": "CFT-002-readFileData",
+      "method": "readFileData",
+      "description": "Requests more bytes than remain from a given offset; verifies the server clamps the read to available data and returns without error.",
+      "category": "CFT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": true,
+      "requiredDataset": "N/A",
+      "notes": "Validates server-side clamping: dataToRead = min(dataSize, fileSize - offset). Offset=60, dataSize=1000."
+    },
+    {
+      "testName": "testReadFileData_exactFileSizeFromOffset0",
+      "label": "CFT-003-readFileData",
+      "method": "readFileData",
+      "description": "Requests exactly fileSize bytes from offset 0; verifies complete file content is returned when dataSize equals the file's total byte count.",
+      "category": "CFT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": true,
+      "requiredDataset": "N/A",
+      "notes": "Boundary condition: dataSize == fileSize. Full content should be returned and match the original data byte-for-byte."
+    },
+    {
+      "testName": "testReadFileData_sequentialChunkedReads",
+      "label": "CFT-004-readFileData",
+      "method": "readFileData",
+      "description": "Reads a file in three sequential chunks and verifies that concatenating the chunks reconstructs the original file content exactly.",
+      "category": "CFT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": true,
+      "requiredDataset": "N/A",
+      "notes": "Simulates a paging pattern. Validates no data duplication or gaps across chunk boundaries."
+    },
+    {
+      "testName": "testReadFileData_largeFileRead",
+      "label": "CFT-005-readFileData",
+      "method": "readFileData",
+      "description": "Reads a 1 MB file in a single call to verify no timeout or memory issue occurs with large payloads over MTOM/SOAP.",
+      "category": "CFT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": true,
+      "requiredDataset": "N/A",
+      "notes": "File is created in-test with 1 MB of repeating ASCII pattern. Tests client/server capacity for large binary payloads."
+    },
+    {
+      "testName": "testReadFileData_dataSizeOfOne",
+      "label": "ECT-001-readFileData",
+      "method": "readFileData",
+      "description": "Reads exactly 1 byte from offset 0 (minimum valid dataSize). Verifies the first byte of the test file is returned correctly.",
+      "category": "ECT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": true,
+      "requiredDataset": "N/A",
+      "notes": "Boundary condition: minimum valid dataSize. Expected response is 'H' (first character of test data)."
+    },
+    {
+      "testName": "testReadFileData_offsetAtLastValidPosition",
+      "label": "ECT-002-readFileData",
+      "method": "readFileData",
+      "description": "Reads from the last valid byte position (offset = fileSize - 1) with dataSize=1. Verifies the final byte is returned correctly.",
+      "category": "ECT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": true,
+      "requiredDataset": "N/A",
+      "notes": "Boundary condition: highest valid offset. Expected response is the last character of the test data string."
+    },
+    {
+      "testName": "testReadFileData_dropzoneAddressExplicitBaremetal",
+      "label": "ECT-003-readFileData",
+      "method": "readFileData",
+      "description": "Explicitly provides dropzoneAddress on a bare-metal cluster. Verifies setting DestNetAddress does not break the request.",
+      "category": "ECT",
+      "environmentRequirements": [
+        "baremetal"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": true,
+      "requiredDataset": "N/A",
+      "notes": "Skipped on containerized clusters via assumeFalse. DestNetAddress was added in service version 1.01."
+    },
+    {
+      "testName": "testReadFileData_dropzoneAddressNullContainerized",
+      "label": "ECT-004-readFileData",
+      "method": "readFileData",
+      "description": "Passes null for dropzoneAddress on a containerized cluster; verifies DestNetAddress is omitted from the request and the read succeeds.",
+      "category": "ECT",
+      "environmentRequirements": [
+        "containerized"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": true,
+      "requiredDataset": "N/A",
+      "notes": "Skipped on non-containerized clusters via assumeTrue. Validates the null-guard branch in the Java client."
+    },
+    {
+      "testName": "testReadFileData_dropzoneAddressEmptyString",
+      "label": "ECT-005-readFileData",
+      "method": "readFileData",
+      "description": "Passes an empty string for dropzoneAddress; the Java client treats it the same as null and the read succeeds on a containerized cluster.",
+      "category": "ECT",
+      "environmentRequirements": [
+        "containerized"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": true,
+      "requiredDataset": "N/A",
+      "notes": "Skipped on non-containerized clusters. Exercises the !dropzoneAddress.isEmpty() guard in the client."
+    },
+    {
+      "testName": "testReadFileData_binaryFileRoundTrip",
+      "label": "ECT-006-readFileData",
+      "method": "readFileData",
+      "description": "Writes a file containing bytes 0x00-0x7F and reads it back. Verifies binary data round-trips faithfully through the DataHandler/MTOM pipeline.",
+      "category": "ECT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": true,
+      "requiredDataset": "N/A",
+      "notes": "Uses bytes 0x00-0x7F (ASCII range) to avoid charset encoding issues. Comparison uses ISO_8859_1."
+    },
+    {
+      "testName": "testReadFileData_emptyDropzone",
+      "label": "EHT-001-readFileData",
+      "method": "readFileData",
+      "description": "Passes an empty string for dropzone; server returns 'Destination not specified' and the Java client throws an exception.",
+      "category": "EHT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "No file setup needed; server validates empty dropzone before file access. Expects exception containing 'Destination not specified'."
+    },
+    {
+      "testName": "testReadFileData_nullDropzone",
+      "label": "EHT-002-readFileData",
+      "method": "readFileData",
+      "description": "Passes null for dropzone; verifies the call does not silently succeed and an exception is thrown.",
+      "category": "EHT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Accepts any exception type. Method must not silently return without throwing."
+    },
+    {
+      "testName": "testReadFileData_emptyFileName",
+      "label": "EHT-003-readFileData",
+      "method": "readFileData",
+      "description": "Passes an empty string for fileName; server returns 'Destination path not specified' and the Java client throws an exception.",
+      "category": "EHT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "No file setup needed. Expects exception containing 'Destination path not specified'."
+    },
+    {
+      "testName": "testReadFileData_dataSizeZero",
+      "label": "EHT-004-readFileData",
+      "method": "readFileData",
+      "description": "Passes dataSize=0; server validates dataSize less than 1 and returns 'Invalid data size.'",
+      "category": "EHT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": true,
+      "requiredDataset": "N/A",
+      "notes": "File created in-test to pass earlier dropzone/path validations. Expects exception containing 'Invalid data size.'."
+    },
+    {
+      "testName": "testReadFileData_dataSizeNegative",
+      "label": "EHT-005-readFileData",
+      "method": "readFileData",
+      "description": "Passes dataSize=-1; server validates dataSize less than 1 and returns 'Invalid data size.'",
+      "category": "EHT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": true,
+      "requiredDataset": "N/A",
+      "notes": "File created in-test. Expects exception containing 'Invalid data size.'."
+    },
+    {
+      "testName": "testReadFileData_negativeOffset",
+      "label": "EHT-006-readFileData",
+      "method": "readFileData",
+      "description": "Passes offset=-1; server returns 'Invalid offset.' and the Java client throws an exception.",
+      "category": "EHT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": true,
+      "requiredDataset": "N/A",
+      "notes": "File created in-test. Expects exception containing 'Invalid offset.'."
+    },
+    {
+      "testName": "testReadFileData_offsetEqualsFileSize",
+      "label": "EHT-007-readFileData",
+      "method": "readFileData",
+      "description": "Passes offset equal to the file size (first invalid position); server returns 'Invalid offset: file size = N.'",
+      "category": "EHT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": true,
+      "requiredDataset": "N/A",
+      "notes": "offset is set dynamically to data.length. Expects exception containing 'Invalid offset:'."
+    },
+    {
+      "testName": "testReadFileData_offsetBeyondFileSize",
+      "label": "EHT-008-readFileData",
+      "method": "readFileData",
+      "description": "Passes offset far beyond the file size; server returns 'Invalid offset: file size = N.'",
+      "category": "EHT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": true,
+      "requiredDataset": "N/A",
+      "notes": "offset=999999. Expects exception containing 'Invalid offset:'."
+    },
+    {
+      "testName": "testReadFileData_nonExistentFile",
+      "label": "EHT-009-readFileData",
+      "method": "readFileData",
+      "description": "Attempts to read a file that does not exist on the dropzone; server returns '<path> does not exist.'",
+      "category": "EHT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Uses a timestamp-based unique filename guaranteed not to exist. Expects exception containing 'does not exist.'."
+    },
+    {
+      "testName": "testReadFileData_invalidDropzoneName",
+      "label": "EHT-010-readFileData",
+      "method": "readFileData",
+      "description": "Passes a dropzone name that does not correspond to any registered landing zone; server rejects during validateDropZoneAccess.",
+      "category": "EHT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Accepts any exception type. Exact error message may vary by HPCC version."
+    },
+    {
+      "testName": "testReadFileData_connectivity",
+      "label": "CNT-001-readFileData",
+      "method": "readFileData",
+      "description": "Confirms the readFileData endpoint is reachable by making a minimal valid request; verifies no transport-layer exception is thrown.",
+      "category": "CNT",
+      "environmentRequirements": [
+        "any"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": true,
+      "requiredDataset": "N/A",
+      "notes": "Distinct from ping() \u2014 confirms the specific readFileData SOAP operation is routed and handled. Fails only on transport-level connectivity errors."
+    },
+    {
+      "testName": "testReadFileData_invalidCredentialsRejected",
+      "label": "CNT-002-readFileData",
+      "method": "readFileData",
+      "description": "Attempts readFileData with invalid credentials on a secured cluster; verifies an authentication-related exception is thrown.",
+      "category": "CNT",
+      "environmentRequirements": [
+        "secure"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Skipped if cluster does not enforce authentication via doesTargetHPCCAuthenticate()."
+    },
+    {
+      "testName": "testReadFileData_emptyCredentialsRejected",
+      "label": "CNT-003-readFileData",
+      "method": "readFileData",
+      "description": "Attempts readFileData with empty credentials on a secured cluster; verifies an authentication error is returned.",
+      "category": "CNT",
+      "environmentRequirements": [
+        "secure"
+      ],
+      "expectedOutcome": "PASS",
+      "requiresData": false,
+      "requiredDataset": "N/A",
+      "notes": "Skipped if cluster does not enforce authentication. Complements CNT-002 with empty credentials case."
+    }
+  ]
+}
