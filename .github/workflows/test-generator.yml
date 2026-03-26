@@ -189,26 +189,22 @@ jobs:
         uses: balchua/microk8s-actions@v0.3.2
         with:
           channel: "1.26/stable"
+          devMode: "true"
           addons: '["dns", "rbac", "hostpath-storage", "registry"]'
 
-      - name: Deploy HPCC Platform (K8s)
+      - name: Build HPCC Docker Image
+        if: github.event.inputs.hpcc_platform_repo != ''
+        uses: ./.github/actions/build-k8s
+        with:
+          platform-folder: ./HPCC-Platform
+
+      - name: Deploy HPCC on K8s
         id: k8s_deploy
         continue-on-error: true
-        env:
-          HPCC_PLATFORM_REPO: ${{ github.event.inputs.hpcc_platform_repo }}
-          HPCC_PLATFORM_BRANCH: ${{ github.event.inputs.hpcc_platform_branch }}
-        run: |
-          curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-          helm repo add hpcc https://hpcc-systems.github.io/helm-chart/
-          helm repo update
-
-          kubectl create namespace default --dry-run=client -o yaml | kubectl apply -f -
-          helm install hpcc hpcc/hpcc \
-            --namespace default \
-            --wait --timeout 10m \
-            --set global.image.pullPolicy=Always
-
-          kubectl wait --for=condition=ready pod --all --namespace default --timeout=300s
+        uses: ./.github/actions/deploy-hpcc-k8s
+        with:
+          use-local-image: ${{ github.event.inputs.hpcc_platform_repo != '' }}
+          platform-folder: ./HPCC-Platform
 
       - name: Create environment config — containerized
         if: steps.k8s_deploy.outcome == 'success'
@@ -256,9 +252,9 @@ jobs:
         if: always()
         run: |
           mkdir -p test-logs/containerized
-          for svc in rowservice eclwatch sql2ecl; do
-            kubectl logs -l app=$svc --namespace default > test-logs/containerized/${svc}.log 2>&1 || true
-          done
+          kubectl logs -l server=rowservice --namespace default > test-logs/containerized/rowservice.log 2>&1 || true
+          kubectl logs -l app=eclwatch --namespace default > test-logs/containerized/eclwatch.log 2>&1 || true
+          kubectl logs -l app=sql2ecl --namespace default > test-logs/containerized/sql2ecl.log 2>&1 || true
 
       - name: Teardown K8s HPCC deployment
         if: always()
@@ -510,6 +506,14 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git checkout -b "$BRANCH"
+
+          # Remove artifacts that must not be committed:
+          #   • HPCC-Platform — nested git repo (checked out for analysis/build)
+          #   • *.deb         — downloaded platform packages (can be 400MB+)
+          #   • environments.json — contains generated credentials
+          #   • ca.seq        — ephemeral TLS artifact
+          rm -rf HPCC-Platform
+          rm -f *.deb environments.json ca.seq
 
           # Stage all new, modified, and deleted files produced during this run
           git add -A
