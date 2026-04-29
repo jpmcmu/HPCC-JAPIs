@@ -10,6 +10,8 @@ import subprocess
 import sys
 import json
 import time
+import urllib.request
+import urllib.error
 
 
 # Global log buffer for artifact generation
@@ -361,7 +363,35 @@ def extract_conflict_sections(merged_content):
     return conflicts
 
 
-def upmerge_to_branch(source_branch, target_branch, pr_number, pr_title):
+def create_github_pr(token, repo, head_branch, base_branch, title, body):
+    """Open a GitHub pull request via the REST API.
+
+    Returns the parsed JSON response dict (includes 'html_url' and 'number').
+    Raises urllib.error.HTTPError on failure.
+    """
+    url = f"https://api.github.com/repos/{repo}/pulls"
+    payload = json.dumps({
+        "title": title,
+        "body": body,
+        "head": head_branch,
+        "base": base_branch,
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        method="POST",
+        headers={
+            "Authorization": f"token {token}",
+            "Accept": "application/vnd.github+json",
+            "Content-Type": "application/json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+    )
+    with urllib.request.urlopen(req) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def upmerge_to_branch(source_branch, target_branch, pr_number, pr_title, use_pr=False):
     log_header(f"Upmerging {source_branch} to {target_branch}")
     
     # Track details for this upmerge attempt
@@ -590,22 +620,61 @@ def upmerge_to_branch(source_branch, target_branch, pr_number, pr_title):
             upmerge_details["error"] = f"Commit failed: {result.stderr}"
             return False, upmerge_details
         
-        # Push to origin
-        log(f"Pushing to origin/{target_branch}...")
-        result = subprocess.run(
-            ["git", "push", "origin", target_branch],
-            capture_output=True, text=True
-        )
-        if result.returncode != 0:
-            log(f"Failed to push: {result.stderr}")
-            upmerge_details["status"] = "failed"
-            upmerge_details["error"] = f"Push failed: {result.stderr}"
-            return False, upmerge_details
-        
-        upmerge_details["steps_completed"].append("push")
-        upmerge_details["status"] = "success"
-        log(f"✅ Successfully upmerged to {target_branch}")
-        return True, upmerge_details
+        # Push to origin (direct push, or open a PR for protected branches)
+        if use_pr:
+            pr_branch = f"auto-upmerge/{source_branch}-to-{target_branch}-pr{pr_number}"
+            log(f"Creating PR branch {pr_branch} and opening PR to {target_branch}...")
+            result = subprocess.run(
+                ["git", "push", "-f", "origin", f"HEAD:{pr_branch}"],
+                capture_output=True, text=True
+            )
+            if result.returncode != 0:
+                log(f"Failed to push PR branch: {result.stderr}")
+                upmerge_details["status"] = "failed"
+                upmerge_details["error"] = f"PR branch push failed: {result.stderr}"
+                return False, upmerge_details
+
+            token = os.environ.get("GITHUB_TOKEN", "")
+            repo = os.environ.get("GITHUB_REPOSITORY", "")
+            upmerge_pr_title = f"Auto-upmerge: {source_branch} to {target_branch}"
+            upmerge_pr_body = (
+                f"Automated upmerge of `{source_branch}` into `{target_branch}`.\n\n"
+                f"Triggered by PR #{pr_number}: {pr_title}"
+            )
+            try:
+                created_pr = create_github_pr(token, repo, pr_branch, target_branch,
+                                              upmerge_pr_title, upmerge_pr_body)
+            except urllib.error.HTTPError as e:
+                error_body = e.read().decode("utf-8", errors="replace")
+                log(f"Failed to create GitHub PR: HTTP {e.code} - {error_body}")
+                upmerge_details["status"] = "failed"
+                upmerge_details["error"] = f"PR creation failed: HTTP {e.code} - {error_body[:200]}"
+                return False, upmerge_details
+
+            upmerge_details["pr_branch"] = pr_branch
+            upmerge_details["pr_url"] = created_pr["html_url"]
+            upmerge_details["created_pr_number"] = created_pr["number"]
+            upmerge_details["steps_completed"].append("push_pr_branch")
+            upmerge_details["steps_completed"].append("create_pr")
+            upmerge_details["status"] = "pr_created"
+            log(f"✅ Successfully created PR for upmerge to {target_branch}: {created_pr['html_url']}")
+            return True, upmerge_details
+        else:
+            log(f"Pushing to origin/{target_branch}...")
+            result = subprocess.run(
+                ["git", "push", "origin", target_branch],
+                capture_output=True, text=True
+            )
+            if result.returncode != 0:
+                log(f"Failed to push: {result.stderr}")
+                upmerge_details["status"] = "failed"
+                upmerge_details["error"] = f"Push failed: {result.stderr}"
+                return False, upmerge_details
+
+            upmerge_details["steps_completed"].append("push")
+            upmerge_details["status"] = "success"
+            log(f"✅ Successfully upmerged to {target_branch}")
+            return True, upmerge_details
         
     except Exception as e:
         upmerge_details["status"] = "exception"
@@ -681,7 +750,8 @@ def main():
     # Perform upmerges
     for target_branch in target_branches:
         try:
-            success, details = upmerge_to_branch(base_branch, target_branch, pr_number, pr_title)
+            success, details = upmerge_to_branch(base_branch, target_branch, pr_number, pr_title,
+                                                  use_pr=(target_branch == "master"))
             detailed_results.append(details)
             if success:
                 successful_upmerges.append(target_branch)
@@ -708,6 +778,17 @@ def main():
         for branch in failed_upmerges:
             log(f"  - {branch}")
     
+    # Collect PR-creation info for comment generation
+    pr_created_upmerges = [
+        {
+            "branch": d["target_branch"],
+            "pr_url": d.get("pr_url", ""),
+            "pr_number": d.get("created_pr_number", ""),
+        }
+        for d in detailed_results
+        if d.get("status") == "pr_created"
+    ]
+
     # Save results for reporting
     results = {
         "pr_number": pr_number,
@@ -715,6 +796,7 @@ def main():
         "base_branch": base_branch,
         "successful_upmerges": successful_upmerges,
         "failed_upmerges": failed_upmerges,
+        "pr_created_upmerges": pr_created_upmerges,
         "detailed_results": detailed_results,
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
     }
